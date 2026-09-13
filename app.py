@@ -104,7 +104,9 @@ STATUS_COLORS = {
     "MODERATE_FLOW": "#FFB300",
     "SMOOTH_TRAFFIC": "#39E6A6",
 }
-ZONE_COORDS = {
+# Fallback only — used if the zone_dimension table doesn't exist yet in Neon
+# (e.g. before etl_pipeline.py has run once with the new schema).
+DEFAULT_ZONE_COORDS = {
     "Central Junction": {"lat": 12.9716, "lon": 77.5946},
     "Tech Park Belt": {"lat": 12.9352, "lon": 77.6245},
     "Outer Ring Road": {"lat": 12.9698, "lon": 77.7500},
@@ -121,14 +123,15 @@ BASE_LAYOUT = dict(
 CHART_MARGIN = dict(t=55, l=10, r=10, b=10)
 
 
-def style_chart(fig, is_3d=False, **extra_layout):
+def style_chart(fig, is_3d=False, is_geo=False, **extra_layout):
     """Apply the shared neon layout, then any chart-specific overrides.
     Builds one merged dict so no keyword (e.g. margin) is ever passed twice.
-    2D-only axis grid styling is skipped for 3D scenes, which use update_scenes instead."""
+    2D-cartesian axis styling is skipped for 3D scenes and geo maps, which use
+    update_scenes / update_geos instead."""
     layout = {**BASE_LAYOUT, "margin": CHART_MARGIN}
     layout.update(extra_layout)
     fig.update_layout(**layout)
-    if not is_3d:
+    if not is_3d and not is_geo:
         fig.update_xaxes(gridcolor="rgba(0,217,255,0.08)", zerolinecolor="rgba(0,217,255,0.15)")
         fig.update_yaxes(gridcolor="rgba(0,217,255,0.08)", zerolinecolor="rgba(0,217,255,0.15)")
     return fig
@@ -167,9 +170,26 @@ def fetch_data(query):
         st.error("DATABASE_URL secret is not configured.")
         st.stop()
     conn = psycopg2.connect(DATABASE_URL)
-    df = pd.read_sql_query(query, conn)
-    conn.close()
-    return df
+    try:
+        return pd.read_sql_query(query, conn)
+    finally:
+        conn.close()
+
+
+@st.cache_data(ttl=300)
+def fetch_zone_coords():
+    """Zone coordinates now live in Neon (zone_dimension table). Falls back to a
+    hardcoded default only if that table doesn't exist yet, so the map never breaks
+    for someone running an older version of etl_pipeline.py."""
+    try:
+        coords_df = fetch_data("SELECT zone_name, latitude, longitude FROM zone_dimension;")
+        coords = {
+            row["zone_name"]: {"lat": row["latitude"], "lon": row["longitude"]}
+            for _, row in coords_df.iterrows()
+        }
+        return coords if coords else DEFAULT_ZONE_COORDS
+    except Exception:
+        return DEFAULT_ZONE_COORDS
 
 
 # 4. Sidebar Controls
@@ -177,8 +197,8 @@ st.sidebar.title("🎛️ Control Panel")
 st.sidebar.caption("Data Engineering Pipeline: **ACTIVE 🟢**")
 st.sidebar.markdown("---")
 
-# This is the only part wrapped in a page-level try/except: if the DB fetch itself
-# fails, nothing below can render meaningfully, so a full-page message is correct here.
+# Only the initial fetch is a page-level try/except: if this fails, nothing below
+# can render meaningfully, so a full-page message is the right call here.
 try:
     raw_df = fetch_data("SELECT * FROM raw_traffic_fact ORDER BY timestamp DESC, id DESC;")
     raw_df["timestamp"] = pd.to_datetime(raw_df["timestamp"])
@@ -204,8 +224,10 @@ st.caption("Real-Time ETL Data Pipeline · Cloud Data Warehouse (Neon PostgreSQL
 with st.expander("ℹ️ About this project / Architecture"):
     st.markdown("""
     **Pipeline:** GitHub Actions (hourly cron) runs `etl_pipeline.py`, which generates and
-    transforms zone-level traffic telemetry and loads it into a Neon PostgreSQL warehouse.
-    This Streamlit app queries that warehouse live and renders the views below.
+    transforms zone-level traffic telemetry and loads it into a Neon PostgreSQL warehouse —
+    a fact table (`raw_traffic_fact`) for readings, and a dimension table (`zone_dimension`)
+    for static zone metadata like coordinates. This Streamlit app queries that warehouse live
+    and renders the views below.
 
     **Stack:** Python · GitHub Actions · Neon (serverless Postgres) · Streamlit · Plotly
 
@@ -397,26 +419,44 @@ def render_3d():
 
 def render_map():
     st.subheader("Live Zone Map")
+    zone_coords = fetch_zone_coords()
+
     latest_snapshot = df.sort_values('timestamp').groupby('zone_name').tail(1).copy()
-    latest_snapshot['lat'] = latest_snapshot['zone_name'].map(lambda z: ZONE_COORDS.get(z, {}).get('lat'))
-    latest_snapshot['lon'] = latest_snapshot['zone_name'].map(lambda z: ZONE_COORDS.get(z, {}).get('lon'))
+    latest_snapshot['lat'] = latest_snapshot['zone_name'].map(lambda z: zone_coords.get(z, {}).get('lat'))
+    latest_snapshot['lon'] = latest_snapshot['zone_name'].map(lambda z: zone_coords.get(z, {}).get('lon'))
     latest_snapshot = latest_snapshot.dropna(subset=['lat', 'lon'])
 
     if latest_snapshot.empty:
         st.info("No zone data available for the current filter.")
         return
 
-    fig_map = px.scatter_map(
-        latest_snapshot, lat="lat", lon="lon",
-        color="congestion_status", size="vehicle_count",
-        hover_name="zone_name", hover_data=["avg_speed_kmh", "vehicle_count"],
+    # scatter_geo renders from data bundled in the Plotly.js library itself — no live
+    # tile-server fetch required — so it can't go blank from a network/CDN issue the
+    # way scatter_map's tile-based rendering could.
+    fig_map = px.scatter_geo(
+        latest_snapshot,
+        lat="lat", lon="lon",
+        color="congestion_status",
+        size="vehicle_count",
+        hover_name="zone_name",
+        hover_data=["avg_speed_kmh", "vehicle_count"],
         color_discrete_map=STATUS_COLORS,
-        zoom=10, height=480, map_style="carto-darkmatter",
-        title="<b>Zone Status (most recent reading per zone)</b>"
+        title="<b>Zone Status (most recent reading per zone)</b>",
+        template="plotly_dark"
     )
-    style_chart(fig_map, margin=dict(l=0, r=0, t=40, b=0))
+    fig_map.update_geos(
+        fitbounds="locations",
+        visible=False,
+        showland=True, landcolor="#0B1220",
+        showocean=True, oceancolor="#05070D",
+        showcountries=True, countrycolor="rgba(0,217,255,0.2)",
+        showcoastlines=True, coastlinecolor="rgba(0,217,255,0.3)",
+        showlakes=False,
+        bgcolor="rgba(0,0,0,0)",
+    )
+    style_chart(fig_map, is_geo=True, height=480, margin=dict(l=0, r=0, t=45, b=0))
     st.plotly_chart(fig_map, use_container_width=True)
-    st.caption("Zone coordinates are approximate placements for this demo dataset.")
+    st.caption("Zone coordinates are sourced from the `zone_dimension` table in Neon. Positions are approximate placements for this demo dataset.")
 
 
 def render_raw_table():
