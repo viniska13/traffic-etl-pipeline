@@ -12,78 +12,98 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. Custom CSS Styling (Executive Dark Look)
+# 2. Custom CSS — Neon Black/Blue Theme
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Rajdhani:wght@400;500;600;700&display=swap');
 
     html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Rajdhani', sans-serif;
+        background-color: #05070D;
+    }
+    .stApp {
+        background: radial-gradient(circle at 15% 0%, #0A1830 0%, #05070D 45%);
     }
 
-    /* Hide the little anchor-link icons Streamlit adds next to headers on hover —
-       cleans up the header row for a more polished, less "default template" look */
-    [data-testid="stHeaderActionElements"] {
-        display: none;
+    h1, h2, h3 {
+        font-family: 'Orbitron', sans-serif !important;
+        letter-spacing: 0.5px;
     }
+    h1 {
+        text-shadow: 0 0 18px rgba(0, 217, 255, 0.45);
+    }
+
+    [data-testid="stHeaderActionElements"] { display: none; }
 
     .metric-card {
-        background-color: #161B22;
-        border: 1px solid #30363D;
-        border-radius: 12px;
+        background: linear-gradient(160deg, #0B1220 0%, #060A14 100%);
+        border: 1px solid rgba(0, 217, 255, 0.35);
+        border-radius: 14px;
         padding: 22px 20px;
         text-align: center;
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
-        transition: transform 0.15s ease, border-color 0.15s ease;
+        box-shadow: 0 0 18px rgba(0, 145, 255, 0.15), inset 0 0 20px rgba(0, 217, 255, 0.03);
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
     }
     .metric-card:hover {
-        transform: translateY(-2px);
-        border-color: #58A6FF;
+        transform: translateY(-4px) scale(1.01);
+        border-color: #00D9FF;
+        box-shadow: 0 0 28px rgba(0, 217, 255, 0.4);
     }
     .metric-title {
-        color: #8B949E;
+        color: #6E86A8;
         font-size: 0.78rem;
-        font-weight: 600;
-        letter-spacing: 1.2px;
+        font-weight: 700;
+        letter-spacing: 1.6px;
         margin-bottom: 10px;
         text-transform: uppercase;
     }
     .metric-value {
-        color: #58A6FF;
-        font-size: 2rem;
+        font-family: 'Orbitron', sans-serif;
+        color: #00D9FF;
+        font-size: 1.9rem;
         font-weight: 800;
+        text-shadow: 0 0 14px rgba(0, 217, 255, 0.55);
     }
     .metric-sub {
-        color: #7EE787;
+        color: #39E6A6;
         font-size: 0.78rem;
         margin-top: 8px;
+        letter-spacing: 0.3px;
     }
 
-    /* Section header accent bar */
     .section-divider {
         height: 1px;
-        background: linear-gradient(90deg, #30363D, transparent);
+        background: linear-gradient(90deg, #00D9FF66, transparent 70%);
         margin: 28px 0 18px 0;
+        box-shadow: 0 0 8px rgba(0, 217, 255, 0.25);
     }
 
-    /* Sidebar polish */
     section[data-testid="stSidebar"] {
-        border-right: 1px solid #30363D;
+        background-color: #050810;
+        border-right: 1px solid rgba(0, 217, 255, 0.2);
     }
+
+    .stTabs [data-baseweb="tab-list"] { gap: 4px; }
+    .stTabs [aria-selected="true"] {
+        color: #00D9FF !important;
+        border-bottom-color: #00D9FF !important;
+    }
+
+    [data-testid="stMetricValue"], .stMarkdown, .stCaption { color: #C9D6E8; }
     </style>
 """, unsafe_allow_html=True)
 
-# Fixed color palette reused across every chart, so a zone is always the same color
+# Neon black/blue palette — one fixed color per zone, reused across every chart
 ZONE_COLORS = {
-    "Central Junction": "#58A6FF",
-    "Tech Park Belt": "#7EE787",
-    "Outer Ring Road": "#FFA657",
-    "Airport Corridor": "#F778BA",
+    "Central Junction": "#00D9FF",
+    "Tech Park Belt": "#39E6A6",
+    "Outer Ring Road": "#7C4DFF",
+    "Airport Corridor": "#2979FF",
 }
 STATUS_COLORS = {
-    "HEAVY_CONGESTION": "#F85149",
-    "MODERATE_FLOW": "#FFA657",
-    "SMOOTH_TRAFFIC": "#7EE787",
+    "HEAVY_CONGESTION": "#FF3860",
+    "MODERATE_FLOW": "#FFB300",
+    "SMOOTH_TRAFFIC": "#39E6A6",
 }
 # Approximate coordinates for the zone map (demo zones spread across a metro area)
 ZONE_COORDS = {
@@ -93,13 +113,23 @@ ZONE_COORDS = {
     "Airport Corridor": {"lat": 13.1986, "lon": 77.7066},
 }
 
-CHART_LAYOUT = dict(
+BASE_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(family="Inter, sans-serif", color="#C9D1D9"),
-    title_font=dict(size=15),
-    margin=dict(t=50, l=10, r=10, b=10),
+    font=dict(family="Rajdhani, sans-serif", color="#C9D6E8", size=13),
+    title_font=dict(size=16, family="Orbitron, sans-serif", color="#00D9FF"),
+    legend=dict(bgcolor="rgba(0,0,0,0)"),
 )
+CHART_MARGIN = dict(t=55, l=10, r=10, b=10)
+
+def style_chart(fig, **extra_layout):
+    """Apply the shared neon layout, then any chart-specific overrides, without duplicate kwargs."""
+    layout = {**BASE_LAYOUT, "margin": CHART_MARGIN}
+    layout.update(extra_layout)
+    fig.update_layout(**layout)
+    fig.update_xaxes(gridcolor="rgba(0,217,255,0.08)", zerolinecolor="rgba(0,217,255,0.15)")
+    fig.update_yaxes(gridcolor="rgba(0,217,255,0.08)", zerolinecolor="rgba(0,217,255,0.15)")
+    return fig
 
 # 3. Database Connection
 DATABASE_URL = st.secrets.get("DATABASE_URL", os.getenv("DATABASE_URL", ""))
@@ -120,19 +150,16 @@ st.sidebar.caption("Data Engineering Pipeline: **ACTIVE 🟢**")
 st.sidebar.markdown("---")
 
 try:
-    # Fetch Raw Fact Data — secondary sort by id keeps rows from the same batch in a
-    # stable, deterministic order instead of an arbitrary tie-break on identical timestamps
     raw_df = fetch_data("SELECT * FROM raw_traffic_fact ORDER BY timestamp DESC, id DESC;")
     raw_df["timestamp"] = pd.to_datetime(raw_df["timestamp"])
+    raw_df["hour_of_day"] = raw_df["timestamp"].dt.hour
 
-    # Interactive Sidebar Filter
     all_zones = sorted(raw_df['zone_name'].dropna().unique().tolist())
     selected_zones = st.sidebar.multiselect("Filter Monitored Zones", all_zones, default=all_zones)
 
     st.sidebar.markdown("---")
     st.sidebar.info("💡 Data is auto-refreshed from Neon PostgreSQL Data Warehouse.")
 
-    # Filtered Dataframe
     if selected_zones:
         df = raw_df[raw_df['zone_name'].isin(selected_zones)].copy()
     else:
@@ -160,7 +187,6 @@ try:
     avg_density = df['vehicle_count'].mean() if not df.empty else 0
     avg_speed = df['avg_speed_kmh'].mean() if not df.empty else 0
 
-    # Freshness: when the warehouse last received data
     last_sync = raw_df['timestamp'].max() if not raw_df.empty else None
     if last_sync is not None:
         minutes_ago = int((pd.Timestamp.now() - last_sync).total_seconds() // 60)
@@ -168,7 +194,6 @@ try:
     else:
         freshness_label = "N/A"
 
-    # Speed trend vs the previous ingestion batch
     batch_times = sorted(df['timestamp'].unique()) if not df.empty else []
     speed_delta = None
     if len(batch_times) >= 2:
@@ -204,7 +229,7 @@ try:
         st.markdown(f'''
             <div class="metric-card">
                 <div class="metric-title">AVG TRANSIT SPEED</div>
-                <div class="metric-value" style="color: #7EE787;">{avg_speed:.1f} <span style="font-size: 1rem;">km/h</span></div>
+                <div class="metric-value">{avg_speed:.1f} <span style="font-size: 1rem;">km/h</span></div>
                 <div class="metric-sub">{delta_html}</div>
             </div>
         ''', unsafe_allow_html=True)
@@ -212,7 +237,7 @@ try:
         st.markdown(f'''
             <div class="metric-card">
                 <div class="metric-title">LAST SYNCED</div>
-                <div class="metric-value" style="color: #FFA657; font-size: 1.4rem;">{freshness_label}</div>
+                <div class="metric-value" style="font-size: 1.3rem;">{freshness_label}</div>
                 <div class="metric-sub">From GitHub Actions cron</div>
             </div>
         ''', unsafe_allow_html=True)
@@ -220,10 +245,11 @@ try:
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
     # 7. Tabbed Navigation View
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📊 Zone Overview",
         "📈 Speed vs Volume Correlation",
         "⏱️ Trends Over Time",
+        "🧊 3D Density Explorer",
         "🗺️ Zone Map",
         "📋 Raw Telemetry Explorer",
     ])
@@ -245,7 +271,7 @@ try:
                 labels={"zone_name": "Zone", "vehicle_count": "Avg Vehicles"},
                 color="zone_name", color_discrete_map=ZONE_COLORS, template="plotly_dark"
             )
-            fig_vol.update_layout(**CHART_LAYOUT, showlegend=False)
+            style_chart(fig_vol, showlegend=False)
             st.plotly_chart(fig_vol, use_container_width=True)
 
         with col_right:
@@ -255,7 +281,7 @@ try:
                 labels={"zone_name": "Zone", "avg_speed_kmh": "Avg Speed (km/h)"},
                 color="zone_name", color_discrete_map=ZONE_COLORS, template="plotly_dark"
             )
-            fig_speed.update_layout(**CHART_LAYOUT, showlegend=False)
+            style_chart(fig_speed, showlegend=False)
             st.plotly_chart(fig_speed, use_container_width=True)
 
         st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
@@ -268,7 +294,7 @@ try:
             labels={"zone_name": "Zone", "count": "Log Count", "congestion_status": "Status"},
             template="plotly_dark"
         )
-        fig_status.update_layout(**CHART_LAYOUT)
+        style_chart(fig_status)
         st.plotly_chart(fig_status, use_container_width=True)
 
     with tab2:
@@ -280,7 +306,7 @@ try:
             labels={"vehicle_count": "Vehicle Count", "avg_speed_kmh": "Speed (km/h)", "zone_name": "Zone"},
             color_discrete_map=ZONE_COLORS, template="plotly_dark"
         )
-        fig_scatter.update_layout(**CHART_LAYOUT)
+        style_chart(fig_scatter)
         st.plotly_chart(fig_scatter, use_container_width=True)
         st.caption("Speed should trend downward as vehicle count rises — that inverse relationship is the core signal this pipeline is built to surface.")
 
@@ -297,7 +323,7 @@ try:
             labels={"timestamp": "Pipeline Run", "avg_speed_kmh": "Avg Speed (km/h)", "zone_name": "Zone"},
             template="plotly_dark"
         )
-        fig_trend_speed.update_layout(**CHART_LAYOUT)
+        style_chart(fig_trend_speed)
         st.plotly_chart(fig_trend_speed, use_container_width=True)
 
         fig_trend_vol = px.line(
@@ -307,10 +333,37 @@ try:
             labels={"timestamp": "Pipeline Run", "vehicle_count": "Avg Vehicles", "zone_name": "Zone"},
             template="plotly_dark"
         )
-        fig_trend_vol.update_layout(**CHART_LAYOUT)
+        style_chart(fig_trend_vol)
         st.plotly_chart(fig_trend_vol, use_container_width=True)
 
     with tab4:
+        st.subheader("3D Density Explorer")
+        st.caption("Vehicle count × speed × hour-of-day — rotate and zoom to spot patterns a flat chart can't show.")
+        fig_3d = px.scatter_3d(
+            df, x="vehicle_count", y="avg_speed_kmh", z="hour_of_day",
+            color="zone_name", size="vehicle_count", opacity=0.85,
+            color_discrete_map=ZONE_COLORS,
+            labels={
+                "vehicle_count": "Vehicle Count",
+                "avg_speed_kmh": "Speed (km/h)",
+                "hour_of_day": "Hour of Day",
+                "zone_name": "Zone",
+            },
+            title="<b>Density · Speed · Time-of-Day</b>",
+            template="plotly_dark"
+        )
+        fig_3d.update_scenes(
+            xaxis_backgroundcolor="rgba(0,0,0,0)",
+            yaxis_backgroundcolor="rgba(0,0,0,0)",
+            zaxis_backgroundcolor="rgba(0,0,0,0)",
+            xaxis_gridcolor="rgba(0,217,255,0.12)",
+            yaxis_gridcolor="rgba(0,217,255,0.12)",
+            zaxis_gridcolor="rgba(0,217,255,0.12)",
+        )
+        style_chart(fig_3d, height=560, margin=dict(t=55, l=0, r=0, b=0))
+        st.plotly_chart(fig_3d, use_container_width=True)
+
+    with tab5:
         st.subheader("Live Zone Map")
         latest_snapshot = df.sort_values('timestamp').groupby('zone_name').tail(1).copy()
         latest_snapshot['lat'] = latest_snapshot['zone_name'].map(lambda z: ZONE_COORDS.get(z, {}).get('lat'))
@@ -318,8 +371,6 @@ try:
         latest_snapshot = latest_snapshot.dropna(subset=['lat', 'lon'])
 
         if not latest_snapshot.empty:
-            # NOTE: px.scatter_mapbox is deprecated/removed in newer Plotly versions —
-            # px.scatter_map (MapLibre-based) is the current replacement and still needs no API token.
             fig_map = px.scatter_map(
                 latest_snapshot,
                 lat="lat", lon="lon",
@@ -332,17 +383,17 @@ try:
                 map_style="carto-darkmatter",
                 title="<b>Zone Status (most recent reading per zone)</b>"
             )
-            fig_map.update_layout(**CHART_LAYOUT, margin=dict(l=0, r=0, t=40, b=0))
+            style_chart(fig_map, margin=dict(l=0, r=0, t=40, b=0))
             st.plotly_chart(fig_map, use_container_width=True)
             st.caption("Zone coordinates are approximate placements for this demo dataset.")
         else:
             st.info("No zone data available for the current filter.")
 
-    with tab5:
+    with tab6:
         st.subheader("Live Telemetry Fact Table")
 
         def highlight_status(val):
-            color = STATUS_COLORS.get(val, "#C9D1D9")
+            color = STATUS_COLORS.get(val, "#C9D6E8")
             return f"color: {color}; font-weight: 600;"
 
         styled_df = df.style.applymap(highlight_status, subset=['congestion_status'])
