@@ -3,6 +3,7 @@ import pandas as pd
 import psycopg2
 import plotly.express as px
 import os
+import traceback
 
 # 1. Page Configuration
 st.set_page_config(
@@ -29,9 +30,7 @@ st.markdown("""
         font-family: 'Orbitron', sans-serif !important;
         letter-spacing: 0.5px;
     }
-    h1 {
-        text-shadow: 0 0 18px rgba(0, 217, 255, 0.45);
-    }
+    h1 { text-shadow: 0 0 18px rgba(0, 217, 255, 0.45); }
 
     [data-testid="stHeaderActionElements"] { display: none; }
 
@@ -89,7 +88,7 @@ st.markdown("""
         border-bottom-color: #00D9FF !important;
     }
 
-    [data-testid="stMetricValue"], .stMarkdown, .stCaption { color: #C9D6E8; }
+    .stMarkdown, .stCaption { color: #C9D6E8; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -105,7 +104,6 @@ STATUS_COLORS = {
     "MODERATE_FLOW": "#FFB300",
     "SMOOTH_TRAFFIC": "#39E6A6",
 }
-# Approximate coordinates for the zone map (demo zones spread across a metro area)
 ZONE_COORDS = {
     "Central Junction": {"lat": 12.9716, "lon": 77.5946},
     "Tech Park Belt": {"lat": 12.9352, "lon": 77.6245},
@@ -122,14 +120,43 @@ BASE_LAYOUT = dict(
 )
 CHART_MARGIN = dict(t=55, l=10, r=10, b=10)
 
-def style_chart(fig, **extra_layout):
-    """Apply the shared neon layout, then any chart-specific overrides, without duplicate kwargs."""
+
+def style_chart(fig, is_3d=False, **extra_layout):
+    """Apply the shared neon layout, then any chart-specific overrides.
+    Builds one merged dict so no keyword (e.g. margin) is ever passed twice.
+    2D-only axis grid styling is skipped for 3D scenes, which use update_scenes instead."""
     layout = {**BASE_LAYOUT, "margin": CHART_MARGIN}
     layout.update(extra_layout)
     fig.update_layout(**layout)
-    fig.update_xaxes(gridcolor="rgba(0,217,255,0.08)", zerolinecolor="rgba(0,217,255,0.15)")
-    fig.update_yaxes(gridcolor="rgba(0,217,255,0.08)", zerolinecolor="rgba(0,217,255,0.15)")
+    if not is_3d:
+        fig.update_xaxes(gridcolor="rgba(0,217,255,0.08)", zerolinecolor="rgba(0,217,255,0.15)")
+        fig.update_yaxes(gridcolor="rgba(0,217,255,0.08)", zerolinecolor="rgba(0,217,255,0.15)")
     return fig
+
+
+def style_dataframe(df, subset_col, color_map):
+    """Color-code a column's text. Supports both old and new pandas Styler APIs
+    (Styler.applymap was removed in newer pandas in favor of Styler.map)."""
+    def highlight(val):
+        color = color_map.get(val, "#C9D6E8")
+        return f"color: {color}; font-weight: 600;"
+
+    styler = df.style
+    if hasattr(styler, "map"):
+        return styler.map(highlight, subset=[subset_col])
+    return styler.applymap(highlight, subset=[subset_col])
+
+
+def render_tab_safely(render_fn):
+    """Run one tab's rendering in isolation. If it fails, only this tab shows an
+    error — the rest of the dashboard keeps working normally."""
+    try:
+        render_fn()
+    except Exception as tab_error:
+        st.error("This view couldn't be rendered.")
+        with st.expander("Technical details (for debugging)"):
+            st.code(f"{type(tab_error).__name__}: {tab_error}\n\n{traceback.format_exc()}")
+
 
 # 3. Database Connection
 DATABASE_URL = st.secrets.get("DATABASE_URL", os.getenv("DATABASE_URL", ""))
@@ -144,262 +171,269 @@ def fetch_data(query):
     conn.close()
     return df
 
+
 # 4. Sidebar Controls
 st.sidebar.title("🎛️ Control Panel")
 st.sidebar.caption("Data Engineering Pipeline: **ACTIVE 🟢**")
 st.sidebar.markdown("---")
 
+# This is the only part wrapped in a page-level try/except: if the DB fetch itself
+# fails, nothing below can render meaningfully, so a full-page message is correct here.
 try:
     raw_df = fetch_data("SELECT * FROM raw_traffic_fact ORDER BY timestamp DESC, id DESC;")
     raw_df["timestamp"] = pd.to_datetime(raw_df["timestamp"])
     raw_df["hour_of_day"] = raw_df["timestamp"].dt.hour
-
-    all_zones = sorted(raw_df['zone_name'].dropna().unique().tolist())
-    selected_zones = st.sidebar.multiselect("Filter Monitored Zones", all_zones, default=all_zones)
-
-    st.sidebar.markdown("---")
-    st.sidebar.info("💡 Data is auto-refreshed from Neon PostgreSQL Data Warehouse.")
-
-    if selected_zones:
-        df = raw_df[raw_df['zone_name'].isin(selected_zones)].copy()
-    else:
-        df = raw_df.copy()
-
-    # 5. Header Section
-    st.title("⚡ Urban Transit Telemetry & Analytics Platform")
-    st.caption("Real-Time ETL Data Pipeline · Cloud Data Warehouse (Neon PostgreSQL) · Automated GitHub Actions Ingestion")
-
-    with st.expander("ℹ️ About this project / Architecture"):
-        st.markdown("""
-        **Pipeline:** GitHub Actions (hourly cron) runs `etl_pipeline.py`, which generates and
-        transforms zone-level traffic telemetry and loads it into a Neon PostgreSQL warehouse.
-        This Streamlit app queries that warehouse live and renders the views below.
-
-        **Stack:** Python · GitHub Actions · Neon (serverless Postgres) · Streamlit · Plotly
-
-        **Source:** [github.com/viniska13/traffic-etl-pipeline](https://github.com/viniska13/traffic-etl-pipeline)
-        """)
-
-    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-
-    # 6. Executive Metric Cards
-    total_records = len(df)
-    avg_density = df['vehicle_count'].mean() if not df.empty else 0
-    avg_speed = df['avg_speed_kmh'].mean() if not df.empty else 0
-
-    last_sync = raw_df['timestamp'].max() if not raw_df.empty else None
-    if last_sync is not None:
-        minutes_ago = int((pd.Timestamp.now() - last_sync).total_seconds() // 60)
-        freshness_label = f"{minutes_ago} min ago" if minutes_ago >= 1 else "just now"
-    else:
-        freshness_label = "N/A"
-
-    batch_times = sorted(df['timestamp'].unique()) if not df.empty else []
-    speed_delta = None
-    if len(batch_times) >= 2:
-        last_batch_speed = df[df['timestamp'] == batch_times[-1]]['avg_speed_kmh'].mean()
-        prev_batch_speed = df[df['timestamp'] == batch_times[-2]]['avg_speed_kmh'].mean()
-        speed_delta = last_batch_speed - prev_batch_speed
-
-    if speed_delta is None:
-        delta_html = "Network Speed"
-    elif speed_delta >= 0:
-        delta_html = f"▲ {speed_delta:.1f} km/h vs last sync"
-    else:
-        delta_html = f"▼ {abs(speed_delta):.1f} km/h vs last sync"
-
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.markdown(f'''
-            <div class="metric-card">
-                <div class="metric-title">TOTAL TELEMETRY LOGS</div>
-                <div class="metric-value">{total_records:,}</div>
-                <div class="metric-sub">Synced from Fact Table</div>
-            </div>
-        ''', unsafe_allow_html=True)
-    with m2:
-        st.markdown(f'''
-            <div class="metric-card">
-                <div class="metric-title">AVG VEHICLE DENSITY</div>
-                <div class="metric-value">{avg_density:.1f}</div>
-                <div class="metric-sub">Vehicles / Zone</div>
-            </div>
-        ''', unsafe_allow_html=True)
-    with m3:
-        st.markdown(f'''
-            <div class="metric-card">
-                <div class="metric-title">AVG TRANSIT SPEED</div>
-                <div class="metric-value">{avg_speed:.1f} <span style="font-size: 1rem;">km/h</span></div>
-                <div class="metric-sub">{delta_html}</div>
-            </div>
-        ''', unsafe_allow_html=True)
-    with m4:
-        st.markdown(f'''
-            <div class="metric-card">
-                <div class="metric-title">LAST SYNCED</div>
-                <div class="metric-value" style="font-size: 1.3rem;">{freshness_label}</div>
-                <div class="metric-sub">From GitHub Actions cron</div>
-            </div>
-        ''', unsafe_allow_html=True)
-
-    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-
-    # 7. Tabbed Navigation View
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📊 Zone Overview",
-        "📈 Speed vs Volume Correlation",
-        "⏱️ Trends Over Time",
-        "🧊 3D Density Explorer",
-        "🗺️ Zone Map",
-        "📋 Raw Telemetry Explorer",
-    ])
-
-    with tab1:
-        st.subheader("Zone Performance Breakdown")
-
-        zone_summary = df.groupby('zone_name').agg({
-            'vehicle_count': 'mean',
-            'avg_speed_kmh': 'mean'
-        }).reset_index()
-
-        col_left, col_right = st.columns(2)
-
-        with col_left:
-            fig_vol = px.bar(
-                zone_summary, x="zone_name", y="vehicle_count",
-                title="<b>Average Traffic Volume by Zone</b>",
-                labels={"zone_name": "Zone", "vehicle_count": "Avg Vehicles"},
-                color="zone_name", color_discrete_map=ZONE_COLORS, template="plotly_dark"
-            )
-            style_chart(fig_vol, showlegend=False)
-            st.plotly_chart(fig_vol, use_container_width=True)
-
-        with col_right:
-            fig_speed = px.bar(
-                zone_summary, x="zone_name", y="avg_speed_kmh",
-                title="<b>Average Transit Speed (km/h) by Zone</b>",
-                labels={"zone_name": "Zone", "avg_speed_kmh": "Avg Speed (km/h)"},
-                color="zone_name", color_discrete_map=ZONE_COLORS, template="plotly_dark"
-            )
-            style_chart(fig_speed, showlegend=False)
-            st.plotly_chart(fig_speed, use_container_width=True)
-
-        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
-        st.subheader("Congestion Status Distribution")
-        status_counts = df.groupby(['zone_name', 'congestion_status']).size().reset_index(name='count')
-        fig_status = px.bar(
-            status_counts, x="zone_name", y="count", color="congestion_status",
-            color_discrete_map=STATUS_COLORS, barmode="stack",
-            title="<b>Congestion Status Mix by Zone</b>",
-            labels={"zone_name": "Zone", "count": "Log Count", "congestion_status": "Status"},
-            template="plotly_dark"
-        )
-        style_chart(fig_status)
-        st.plotly_chart(fig_status, use_container_width=True)
-
-    with tab2:
-        st.subheader("Congestion & Speed Correlation")
-        fig_scatter = px.scatter(
-            df, x="vehicle_count", y="avg_speed_kmh", color="zone_name", size="vehicle_count",
-            hover_data=["timestamp", "congestion_status"],
-            title="<b>Vehicle Density vs Speed Distribution</b>",
-            labels={"vehicle_count": "Vehicle Count", "avg_speed_kmh": "Speed (km/h)", "zone_name": "Zone"},
-            color_discrete_map=ZONE_COLORS, template="plotly_dark"
-        )
-        style_chart(fig_scatter)
-        st.plotly_chart(fig_scatter, use_container_width=True)
-        st.caption("Speed should trend downward as vehicle count rises — that inverse relationship is the core signal this pipeline is built to surface.")
-
-    with tab3:
-        st.subheader("Trends Across Pipeline Runs")
-        batch_trend = df.groupby(['timestamp', 'zone_name']).agg({
-            'vehicle_count': 'mean', 'avg_speed_kmh': 'mean'
-        }).reset_index().sort_values('timestamp')
-
-        fig_trend_speed = px.line(
-            batch_trend, x="timestamp", y="avg_speed_kmh", color="zone_name",
-            markers=True, color_discrete_map=ZONE_COLORS,
-            title="<b>Average Speed Across Ingestion Runs</b>",
-            labels={"timestamp": "Pipeline Run", "avg_speed_kmh": "Avg Speed (km/h)", "zone_name": "Zone"},
-            template="plotly_dark"
-        )
-        style_chart(fig_trend_speed)
-        st.plotly_chart(fig_trend_speed, use_container_width=True)
-
-        fig_trend_vol = px.line(
-            batch_trend, x="timestamp", y="vehicle_count", color="zone_name",
-            markers=True, color_discrete_map=ZONE_COLORS,
-            title="<b>Vehicle Count Across Ingestion Runs</b>",
-            labels={"timestamp": "Pipeline Run", "vehicle_count": "Avg Vehicles", "zone_name": "Zone"},
-            template="plotly_dark"
-        )
-        style_chart(fig_trend_vol)
-        st.plotly_chart(fig_trend_vol, use_container_width=True)
-
-    with tab4:
-        st.subheader("3D Density Explorer")
-        st.caption("Vehicle count × speed × hour-of-day — rotate and zoom to spot patterns a flat chart can't show.")
-        fig_3d = px.scatter_3d(
-            df, x="vehicle_count", y="avg_speed_kmh", z="hour_of_day",
-            color="zone_name", size="vehicle_count", opacity=0.85,
-            color_discrete_map=ZONE_COLORS,
-            labels={
-                "vehicle_count": "Vehicle Count",
-                "avg_speed_kmh": "Speed (km/h)",
-                "hour_of_day": "Hour of Day",
-                "zone_name": "Zone",
-            },
-            title="<b>Density · Speed · Time-of-Day</b>",
-            template="plotly_dark"
-        )
-        fig_3d.update_scenes(
-            xaxis_backgroundcolor="rgba(0,0,0,0)",
-            yaxis_backgroundcolor="rgba(0,0,0,0)",
-            zaxis_backgroundcolor="rgba(0,0,0,0)",
-            xaxis_gridcolor="rgba(0,217,255,0.12)",
-            yaxis_gridcolor="rgba(0,217,255,0.12)",
-            zaxis_gridcolor="rgba(0,217,255,0.12)",
-        )
-        style_chart(fig_3d, height=560, margin=dict(t=55, l=0, r=0, b=0))
-        st.plotly_chart(fig_3d, use_container_width=True)
-
-    with tab5:
-        st.subheader("Live Zone Map")
-        latest_snapshot = df.sort_values('timestamp').groupby('zone_name').tail(1).copy()
-        latest_snapshot['lat'] = latest_snapshot['zone_name'].map(lambda z: ZONE_COORDS.get(z, {}).get('lat'))
-        latest_snapshot['lon'] = latest_snapshot['zone_name'].map(lambda z: ZONE_COORDS.get(z, {}).get('lon'))
-        latest_snapshot = latest_snapshot.dropna(subset=['lat', 'lon'])
-
-        if not latest_snapshot.empty:
-            fig_map = px.scatter_map(
-                latest_snapshot,
-                lat="lat", lon="lon",
-                color="congestion_status",
-                size="vehicle_count",
-                hover_name="zone_name",
-                hover_data=["avg_speed_kmh", "vehicle_count"],
-                color_discrete_map=STATUS_COLORS,
-                zoom=10, height=480,
-                map_style="carto-darkmatter",
-                title="<b>Zone Status (most recent reading per zone)</b>"
-            )
-            style_chart(fig_map, margin=dict(l=0, r=0, t=40, b=0))
-            st.plotly_chart(fig_map, use_container_width=True)
-            st.caption("Zone coordinates are approximate placements for this demo dataset.")
-        else:
-            st.info("No zone data available for the current filter.")
-
-    with tab6:
-        st.subheader("Live Telemetry Fact Table")
-
-        def highlight_status(val):
-            color = STATUS_COLORS.get(val, "#C9D6E8")
-            return f"color: {color}; font-weight: 600;"
-
-        styled_df = df.style.applymap(highlight_status, subset=['congestion_status'])
-        st.dataframe(styled_df, use_container_width=True, height=400)
-
 except Exception as e:
-    st.error("Something went wrong loading telemetry data. The dashboard will retry on the next refresh.")
+    st.error("Couldn't load telemetry data from the warehouse. The dashboard will retry on the next refresh.")
     with st.expander("Technical details (for debugging)"):
-        st.code(str(e))
+        st.code(f"{type(e).__name__}: {e}")
+    st.stop()
+
+all_zones = sorted(raw_df['zone_name'].dropna().unique().tolist())
+selected_zones = st.sidebar.multiselect("Filter Monitored Zones", all_zones, default=all_zones)
+
+st.sidebar.markdown("---")
+st.sidebar.info("💡 Data is auto-refreshed from Neon PostgreSQL Data Warehouse.")
+
+df = raw_df[raw_df['zone_name'].isin(selected_zones)].copy() if selected_zones else raw_df.copy()
+
+# 5. Header Section
+st.title("⚡ Urban Transit Telemetry & Analytics Platform")
+st.caption("Real-Time ETL Data Pipeline · Cloud Data Warehouse (Neon PostgreSQL) · Automated GitHub Actions Ingestion")
+
+with st.expander("ℹ️ About this project / Architecture"):
+    st.markdown("""
+    **Pipeline:** GitHub Actions (hourly cron) runs `etl_pipeline.py`, which generates and
+    transforms zone-level traffic telemetry and loads it into a Neon PostgreSQL warehouse.
+    This Streamlit app queries that warehouse live and renders the views below.
+
+    **Stack:** Python · GitHub Actions · Neon (serverless Postgres) · Streamlit · Plotly
+
+    **Source:** [github.com/viniska13/traffic-etl-pipeline](https://github.com/viniska13/traffic-etl-pipeline)
+    """)
+
+st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+# 6. Executive Metric Cards
+total_records = len(df)
+avg_density = df['vehicle_count'].mean() if not df.empty else 0
+avg_speed = df['avg_speed_kmh'].mean() if not df.empty else 0
+
+last_sync = raw_df['timestamp'].max() if not raw_df.empty else None
+if last_sync is not None:
+    minutes_ago = max(0, int((pd.Timestamp.now() - last_sync).total_seconds() // 60))
+    freshness_label = f"{minutes_ago} min ago" if minutes_ago >= 1 else "just now"
+else:
+    freshness_label = "N/A"
+
+batch_times = sorted(df['timestamp'].unique()) if not df.empty else []
+speed_delta = None
+if len(batch_times) >= 2:
+    last_batch_speed = df[df['timestamp'] == batch_times[-1]]['avg_speed_kmh'].mean()
+    prev_batch_speed = df[df['timestamp'] == batch_times[-2]]['avg_speed_kmh'].mean()
+    speed_delta = last_batch_speed - prev_batch_speed
+
+if speed_delta is None:
+    delta_html = "Network Speed"
+elif speed_delta >= 0:
+    delta_html = f"▲ {speed_delta:.1f} km/h vs last sync"
+else:
+    delta_html = f"▼ {abs(speed_delta):.1f} km/h vs last sync"
+
+m1, m2, m3, m4 = st.columns(4)
+with m1:
+    st.markdown(f'''
+        <div class="metric-card">
+            <div class="metric-title">TOTAL TELEMETRY LOGS</div>
+            <div class="metric-value">{total_records:,}</div>
+            <div class="metric-sub">Synced from Fact Table</div>
+        </div>
+    ''', unsafe_allow_html=True)
+with m2:
+    st.markdown(f'''
+        <div class="metric-card">
+            <div class="metric-title">AVG VEHICLE DENSITY</div>
+            <div class="metric-value">{avg_density:.1f}</div>
+            <div class="metric-sub">Vehicles / Zone</div>
+        </div>
+    ''', unsafe_allow_html=True)
+with m3:
+    st.markdown(f'''
+        <div class="metric-card">
+            <div class="metric-title">AVG TRANSIT SPEED</div>
+            <div class="metric-value">{avg_speed:.1f} <span style="font-size: 1rem;">km/h</span></div>
+            <div class="metric-sub">{delta_html}</div>
+        </div>
+    ''', unsafe_allow_html=True)
+with m4:
+    st.markdown(f'''
+        <div class="metric-card">
+            <div class="metric-title">LAST SYNCED</div>
+            <div class="metric-value" style="font-size: 1.3rem;">{freshness_label}</div>
+            <div class="metric-sub">From GitHub Actions cron</div>
+        </div>
+    ''', unsafe_allow_html=True)
+
+st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+
+# 7. Tabbed Navigation View — each tab body is isolated via render_tab_safely,
+# so a problem in one tab never takes down the others.
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "📊 Zone Overview",
+    "📈 Speed vs Volume Correlation",
+    "⏱️ Trends Over Time",
+    "🧊 3D Density Explorer",
+    "🗺️ Zone Map",
+    "📋 Raw Telemetry Explorer",
+])
+
+
+def render_zone_overview():
+    st.subheader("Zone Performance Breakdown")
+    zone_summary = df.groupby('zone_name').agg({
+        'vehicle_count': 'mean', 'avg_speed_kmh': 'mean'
+    }).reset_index()
+
+    col_left, col_right = st.columns(2)
+    with col_left:
+        fig_vol = px.bar(
+            zone_summary, x="zone_name", y="vehicle_count",
+            title="<b>Average Traffic Volume by Zone</b>",
+            labels={"zone_name": "Zone", "vehicle_count": "Avg Vehicles"},
+            color="zone_name", color_discrete_map=ZONE_COLORS, template="plotly_dark"
+        )
+        style_chart(fig_vol, showlegend=False)
+        st.plotly_chart(fig_vol, use_container_width=True)
+    with col_right:
+        fig_speed = px.bar(
+            zone_summary, x="zone_name", y="avg_speed_kmh",
+            title="<b>Average Transit Speed (km/h) by Zone</b>",
+            labels={"zone_name": "Zone", "avg_speed_kmh": "Avg Speed (km/h)"},
+            color="zone_name", color_discrete_map=ZONE_COLORS, template="plotly_dark"
+        )
+        style_chart(fig_speed, showlegend=False)
+        st.plotly_chart(fig_speed, use_container_width=True)
+
+    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+    st.subheader("Congestion Status Distribution")
+    status_counts = df.groupby(['zone_name', 'congestion_status']).size().reset_index(name='count')
+    fig_status = px.bar(
+        status_counts, x="zone_name", y="count", color="congestion_status",
+        color_discrete_map=STATUS_COLORS, barmode="stack",
+        title="<b>Congestion Status Mix by Zone</b>",
+        labels={"zone_name": "Zone", "count": "Log Count", "congestion_status": "Status"},
+        template="plotly_dark"
+    )
+    style_chart(fig_status)
+    st.plotly_chart(fig_status, use_container_width=True)
+
+
+def render_correlation():
+    st.subheader("Congestion & Speed Correlation")
+    fig_scatter = px.scatter(
+        df, x="vehicle_count", y="avg_speed_kmh", color="zone_name", size="vehicle_count",
+        hover_data=["timestamp", "congestion_status"],
+        title="<b>Vehicle Density vs Speed Distribution</b>",
+        labels={"vehicle_count": "Vehicle Count", "avg_speed_kmh": "Speed (km/h)", "zone_name": "Zone"},
+        color_discrete_map=ZONE_COLORS, template="plotly_dark"
+    )
+    style_chart(fig_scatter)
+    st.plotly_chart(fig_scatter, use_container_width=True)
+    st.caption("Speed should trend downward as vehicle count rises — that inverse relationship is the core signal this pipeline is built to surface.")
+
+
+def render_trends():
+    st.subheader("Trends Across Pipeline Runs")
+    batch_trend = df.groupby(['timestamp', 'zone_name']).agg({
+        'vehicle_count': 'mean', 'avg_speed_kmh': 'mean'
+    }).reset_index().sort_values('timestamp')
+
+    fig_trend_speed = px.line(
+        batch_trend, x="timestamp", y="avg_speed_kmh", color="zone_name",
+        markers=True, color_discrete_map=ZONE_COLORS,
+        title="<b>Average Speed Across Ingestion Runs</b>",
+        labels={"timestamp": "Pipeline Run", "avg_speed_kmh": "Avg Speed (km/h)", "zone_name": "Zone"},
+        template="plotly_dark"
+    )
+    style_chart(fig_trend_speed)
+    st.plotly_chart(fig_trend_speed, use_container_width=True)
+
+    fig_trend_vol = px.line(
+        batch_trend, x="timestamp", y="vehicle_count", color="zone_name",
+        markers=True, color_discrete_map=ZONE_COLORS,
+        title="<b>Vehicle Count Across Ingestion Runs</b>",
+        labels={"timestamp": "Pipeline Run", "vehicle_count": "Avg Vehicles", "zone_name": "Zone"},
+        template="plotly_dark"
+    )
+    style_chart(fig_trend_vol)
+    st.plotly_chart(fig_trend_vol, use_container_width=True)
+
+
+def render_3d():
+    st.subheader("3D Density Explorer")
+    st.caption("Vehicle count × speed × hour-of-day — rotate and zoom to spot patterns a flat chart can't show.")
+    fig_3d = px.scatter_3d(
+        df, x="vehicle_count", y="avg_speed_kmh", z="hour_of_day",
+        color="zone_name", size="vehicle_count", opacity=0.85,
+        color_discrete_map=ZONE_COLORS,
+        labels={
+            "vehicle_count": "Vehicle Count", "avg_speed_kmh": "Speed (km/h)",
+            "hour_of_day": "Hour of Day", "zone_name": "Zone",
+        },
+        title="<b>Density · Speed · Time-of-Day</b>",
+        template="plotly_dark"
+    )
+    fig_3d.update_scenes(
+        xaxis_backgroundcolor="rgba(0,0,0,0)",
+        yaxis_backgroundcolor="rgba(0,0,0,0)",
+        zaxis_backgroundcolor="rgba(0,0,0,0)",
+        xaxis_gridcolor="rgba(0,217,255,0.12)",
+        yaxis_gridcolor="rgba(0,217,255,0.12)",
+        zaxis_gridcolor="rgba(0,217,255,0.12)",
+    )
+    style_chart(fig_3d, is_3d=True, height=560, margin=dict(t=55, l=0, r=0, b=0))
+    st.plotly_chart(fig_3d, use_container_width=True)
+
+
+def render_map():
+    st.subheader("Live Zone Map")
+    latest_snapshot = df.sort_values('timestamp').groupby('zone_name').tail(1).copy()
+    latest_snapshot['lat'] = latest_snapshot['zone_name'].map(lambda z: ZONE_COORDS.get(z, {}).get('lat'))
+    latest_snapshot['lon'] = latest_snapshot['zone_name'].map(lambda z: ZONE_COORDS.get(z, {}).get('lon'))
+    latest_snapshot = latest_snapshot.dropna(subset=['lat', 'lon'])
+
+    if latest_snapshot.empty:
+        st.info("No zone data available for the current filter.")
+        return
+
+    fig_map = px.scatter_map(
+        latest_snapshot, lat="lat", lon="lon",
+        color="congestion_status", size="vehicle_count",
+        hover_name="zone_name", hover_data=["avg_speed_kmh", "vehicle_count"],
+        color_discrete_map=STATUS_COLORS,
+        zoom=10, height=480, map_style="carto-darkmatter",
+        title="<b>Zone Status (most recent reading per zone)</b>"
+    )
+    style_chart(fig_map, margin=dict(l=0, r=0, t=40, b=0))
+    st.plotly_chart(fig_map, use_container_width=True)
+    st.caption("Zone coordinates are approximate placements for this demo dataset.")
+
+
+def render_raw_table():
+    st.subheader("Live Telemetry Fact Table")
+    styled_df = style_dataframe(df, "congestion_status", STATUS_COLORS)
+    st.dataframe(styled_df, use_container_width=True, height=400)
+
+
+with tab1:
+    render_tab_safely(render_zone_overview)
+with tab2:
+    render_tab_safely(render_correlation)
+with tab3:
+    render_tab_safely(render_trends)
+with tab4:
+    render_tab_safely(render_3d)
+with tab5:
+    render_tab_safely(render_map)
+with tab6:
+    render_tab_safely(render_raw_table)
