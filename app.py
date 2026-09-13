@@ -3,7 +3,6 @@ import pandas as pd
 import psycopg2
 import plotly.express as px
 import os
-from datetime import datetime
 
 # 1. Page Configuration
 st.set_page_config(
@@ -16,31 +15,60 @@ st.set_page_config(
 # 2. Custom CSS Styling (Executive Dark Look)
 st.markdown("""
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+
+    /* Hide the little anchor-link icons Streamlit adds next to headers on hover —
+       cleans up the header row for a more polished, less "default template" look */
+    [data-testid="stHeaderActionElements"] {
+        display: none;
+    }
+
     .metric-card {
         background-color: #161B22;
         border: 1px solid #30363D;
-        border-radius: 10px;
-        padding: 20px;
+        border-radius: 12px;
+        padding: 22px 20px;
         text-align: center;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+        transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .metric-card:hover {
+        transform: translateY(-2px);
+        border-color: #58A6FF;
     }
     .metric-title {
         color: #8B949E;
-        font-size: 0.85rem;
+        font-size: 0.78rem;
         font-weight: 600;
-        letter-spacing: 1px;
-        margin-bottom: 8px;
+        letter-spacing: 1.2px;
+        margin-bottom: 10px;
         text-transform: uppercase;
     }
     .metric-value {
         color: #58A6FF;
         font-size: 2rem;
-        font-weight: 700;
+        font-weight: 800;
     }
     .metric-sub {
         color: #7EE787;
-        font-size: 0.8rem;
-        margin-top: 6px;
+        font-size: 0.78rem;
+        margin-top: 8px;
+    }
+
+    /* Section header accent bar */
+    .section-divider {
+        height: 1px;
+        background: linear-gradient(90deg, #30363D, transparent);
+        margin: 28px 0 18px 0;
+    }
+
+    /* Sidebar polish */
+    section[data-testid="stSidebar"] {
+        border-right: 1px solid #30363D;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -64,6 +92,14 @@ ZONE_COORDS = {
     "Outer Ring Road": {"lat": 12.9698, "lon": 77.7500},
     "Airport Corridor": {"lat": 13.1986, "lon": 77.7066},
 }
+
+CHART_LAYOUT = dict(
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(family="Inter, sans-serif", color="#C9D1D9"),
+    title_font=dict(size=15),
+    margin=dict(t=50, l=10, r=10, b=10),
+)
 
 # 3. Database Connection
 DATABASE_URL = st.secrets.get("DATABASE_URL", os.getenv("DATABASE_URL", ""))
@@ -104,7 +140,7 @@ try:
 
     # 5. Header Section
     st.title("⚡ Urban Transit Telemetry & Analytics Platform")
-    st.caption("Real-Time ETL Data Pipeline | Cloud Data Warehouse (Neon PostgreSQL) + Automated GitHub Actions Ingestion")
+    st.caption("Real-Time ETL Data Pipeline · Cloud Data Warehouse (Neon PostgreSQL) · Automated GitHub Actions Ingestion")
 
     with st.expander("ℹ️ About this project / Architecture"):
         st.markdown("""
@@ -117,7 +153,7 @@ try:
         **Source:** [github.com/viniska13/traffic-etl-pipeline](https://github.com/viniska13/traffic-etl-pipeline)
         """)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
     # 6. Executive Metric Cards
     total_records = len(df)
@@ -181,7 +217,7 @@ try:
             </div>
         ''', unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
     # 7. Tabbed Navigation View
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -204,82 +240,54 @@ try:
 
         with col_left:
             fig_vol = px.bar(
-                zone_summary,
-                x="zone_name",
-                y="vehicle_count",
+                zone_summary, x="zone_name", y="vehicle_count",
                 title="<b>Average Traffic Volume by Zone</b>",
                 labels={"zone_name": "Zone", "vehicle_count": "Avg Vehicles"},
-                color="zone_name",
-                color_discrete_map=ZONE_COLORS,
-                template="plotly_dark"
+                color="zone_name", color_discrete_map=ZONE_COLORS, template="plotly_dark"
             )
-            fig_vol.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                showlegend=False, font=dict(family="Inter, sans-serif")
-            )
+            fig_vol.update_layout(**CHART_LAYOUT, showlegend=False)
             st.plotly_chart(fig_vol, use_container_width=True)
 
         with col_right:
             fig_speed = px.bar(
-                zone_summary,
-                x="zone_name",
-                y="avg_speed_kmh",
+                zone_summary, x="zone_name", y="avg_speed_kmh",
                 title="<b>Average Transit Speed (km/h) by Zone</b>",
                 labels={"zone_name": "Zone", "avg_speed_kmh": "Avg Speed (km/h)"},
-                color="zone_name",
-                color_discrete_map=ZONE_COLORS,
-                template="plotly_dark"
+                color="zone_name", color_discrete_map=ZONE_COLORS, template="plotly_dark"
             )
-            fig_speed.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                showlegend=False, font=dict(family="Inter, sans-serif")
-            )
+            fig_speed.update_layout(**CHART_LAYOUT, showlegend=False)
             st.plotly_chart(fig_speed, use_container_width=True)
 
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
         st.subheader("Congestion Status Distribution")
         status_counts = df.groupby(['zone_name', 'congestion_status']).size().reset_index(name='count')
         fig_status = px.bar(
-            status_counts,
-            x="zone_name", y="count", color="congestion_status",
-            color_discrete_map=STATUS_COLORS,
-            barmode="stack",
+            status_counts, x="zone_name", y="count", color="congestion_status",
+            color_discrete_map=STATUS_COLORS, barmode="stack",
             title="<b>Congestion Status Mix by Zone</b>",
             labels={"zone_name": "Zone", "count": "Log Count", "congestion_status": "Status"},
             template="plotly_dark"
         )
-        fig_status.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="Inter, sans-serif")
-        )
+        fig_status.update_layout(**CHART_LAYOUT)
         st.plotly_chart(fig_status, use_container_width=True)
 
     with tab2:
         st.subheader("Congestion & Speed Correlation")
         fig_scatter = px.scatter(
-            df,
-            x="vehicle_count",
-            y="avg_speed_kmh",
-            color="zone_name",
-            size="vehicle_count",
+            df, x="vehicle_count", y="avg_speed_kmh", color="zone_name", size="vehicle_count",
             hover_data=["timestamp", "congestion_status"],
             title="<b>Vehicle Density vs Speed Distribution</b>",
             labels={"vehicle_count": "Vehicle Count", "avg_speed_kmh": "Speed (km/h)", "zone_name": "Zone"},
-            color_discrete_map=ZONE_COLORS,
-            template="plotly_dark"
+            color_discrete_map=ZONE_COLORS, template="plotly_dark"
         )
-        fig_scatter.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="Inter, sans-serif")
-        )
+        fig_scatter.update_layout(**CHART_LAYOUT)
         st.plotly_chart(fig_scatter, use_container_width=True)
         st.caption("Speed should trend downward as vehicle count rises — that inverse relationship is the core signal this pipeline is built to surface.")
 
     with tab3:
         st.subheader("Trends Across Pipeline Runs")
         batch_trend = df.groupby(['timestamp', 'zone_name']).agg({
-            'vehicle_count': 'mean',
-            'avg_speed_kmh': 'mean'
+            'vehicle_count': 'mean', 'avg_speed_kmh': 'mean'
         }).reset_index().sort_values('timestamp')
 
         fig_trend_speed = px.line(
@@ -289,10 +297,7 @@ try:
             labels={"timestamp": "Pipeline Run", "avg_speed_kmh": "Avg Speed (km/h)", "zone_name": "Zone"},
             template="plotly_dark"
         )
-        fig_trend_speed.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="Inter, sans-serif")
-        )
+        fig_trend_speed.update_layout(**CHART_LAYOUT)
         st.plotly_chart(fig_trend_speed, use_container_width=True)
 
         fig_trend_vol = px.line(
@@ -302,10 +307,7 @@ try:
             labels={"timestamp": "Pipeline Run", "vehicle_count": "Avg Vehicles", "zone_name": "Zone"},
             template="plotly_dark"
         )
-        fig_trend_vol.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="Inter, sans-serif")
-        )
+        fig_trend_vol.update_layout(**CHART_LAYOUT)
         st.plotly_chart(fig_trend_vol, use_container_width=True)
 
     with tab4:
@@ -316,7 +318,9 @@ try:
         latest_snapshot = latest_snapshot.dropna(subset=['lat', 'lon'])
 
         if not latest_snapshot.empty:
-            fig_map = px.scatter_mapbox(
+            # NOTE: px.scatter_mapbox is deprecated/removed in newer Plotly versions —
+            # px.scatter_map (MapLibre-based) is the current replacement and still needs no API token.
+            fig_map = px.scatter_map(
                 latest_snapshot,
                 lat="lat", lon="lon",
                 color="congestion_status",
@@ -325,14 +329,10 @@ try:
                 hover_data=["avg_speed_kmh", "vehicle_count"],
                 color_discrete_map=STATUS_COLORS,
                 zoom=10, height=480,
-                mapbox_style="carto-darkmatter",
+                map_style="carto-darkmatter",
                 title="<b>Zone Status (most recent reading per zone)</b>"
             )
-            fig_map.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)",
-                margin=dict(l=0, r=0, t=40, b=0),
-                font=dict(family="Inter, sans-serif")
-            )
+            fig_map.update_layout(**CHART_LAYOUT, margin=dict(l=0, r=0, t=40, b=0))
             st.plotly_chart(fig_map, use_container_width=True)
             st.caption("Zone coordinates are approximate placements for this demo dataset.")
         else:
