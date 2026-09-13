@@ -1,4 +1,4 @@
-pandas
-psycopg2-binary
-streamlit
-plotly
+pandas>=2.0
+psycopg2-binary>=2.9
+streamlit>=1.35
+plotly>=5.24
