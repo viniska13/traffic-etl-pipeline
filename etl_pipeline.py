@@ -4,16 +4,26 @@ from datetime import datetime
 import pandas as pd
 import psycopg2
 
-# 1. EXTRACT: Fetch raw traffic metrics
+# 1. EXTRACT: Simulate raw traffic metrics with a realistic density-speed relationship
 def extract_traffic_data():
     zones = ["Central Junction", "Tech Park Belt", "Outer Ring Road", "Airport Corridor"]
     data = []
     for zone in zones:
+        vehicle_count = random.randint(150, 1200)
+
+        # Realistic traffic-flow model: speed drops as density rises (inverse relationship),
+        # plus a small amount of random noise so it isn't a perfectly straight line.
+        # 65 km/h free-flow speed at low density, tapering toward ~15 km/h at max density.
+        density_ratio = vehicle_count / 1200
+        base_speed = 65 - (density_ratio * 48)
+        noise = random.uniform(-3.5, 3.5)
+        avg_speed_kmh = max(8.0, min(65.0, base_speed + noise))
+
         data.append({
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "zone_name": zone,
-            "vehicle_count": random.randint(150, 1200),
-            "avg_speed_kmh": round(random.uniform(12.0, 65.0), 2)
+            "vehicle_count": vehicle_count,
+            "avg_speed_kmh": round(avg_speed_kmh, 2)
         })
     return pd.DataFrame(data)
 
@@ -61,7 +71,7 @@ def load_to_postgres(df):
     conn.commit()
     cursor.close()
     conn.close()
-    print(f"✅ Successful Ingestion! Loaded {len(df)} rows into Neon Postgres at {datetime.now()}")
+    print(f"Successful ingestion. Loaded {len(df)} rows into Neon Postgres at {datetime.now()}")
 
 if __name__ == "__main__":
     raw_df = extract_traffic_data()
