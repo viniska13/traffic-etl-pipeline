@@ -2,18 +2,20 @@ import streamlit as st
 import pandas as pd
 import psycopg2
 import plotly.express as px
+import folium
+from streamlit_folium import st_folium
 import os
 import traceback
 
 # 1. Page Configuration
 st.set_page_config(
     page_title="Urban Transit Telemetry Platform",
-    page_icon="⚡",
+    page_icon=None,  # no emoji/icon — plain professional tab title
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# 2. Custom CSS — Neon Black/Blue Theme
+# 2. Custom CSS — Neon Black/Blue Theme, no emoji iconography
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Rajdhani:wght@400;500;600;700&display=swap');
@@ -33,6 +35,8 @@ st.markdown("""
     h1 { text-shadow: 0 0 18px rgba(0, 217, 255, 0.45); }
 
     [data-testid="stHeaderActionElements"] { display: none; }
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
 
     .metric-card {
         background: linear-gradient(160deg, #0B1220 0%, #060A14 100%);
@@ -63,7 +67,7 @@ st.markdown("""
         margin: 28px 0 18px 0; box-shadow: 0 0 8px rgba(0, 217, 255, 0.25);
     }
 
-    /* --- Redesigned Control Panel (sidebar) --- */
+    /* --- Control Panel (sidebar) --- */
     section[data-testid="stSidebar"] {
         background-color: #050810;
         border-right: 1px solid rgba(0, 217, 255, 0.2);
@@ -75,40 +79,69 @@ st.markdown("""
         padding: 4px 0 14px 0; margin-bottom: 10px;
         border-bottom: 1px solid rgba(0, 217, 255, 0.15);
     }
-    .sidebar-brand-icon {
-        font-size: 1.6rem; text-shadow: 0 0 14px rgba(0, 217, 255, 0.6);
+    .sidebar-brand-mark {
+        width: 30px; height: 30px; border-radius: 7px;
+        background: linear-gradient(145deg, #00D9FF, #2979FF);
+        box-shadow: 0 0 12px rgba(0, 217, 255, 0.5);
+        display: flex; align-items: center; justify-content: center;
+        font-family: 'Orbitron', sans-serif; font-weight: 800; color: #05070D; font-size: 0.85rem;
     }
     .sidebar-brand-text {
         font-family: 'Orbitron', sans-serif; color: #00D9FF;
-        font-size: 0.95rem; font-weight: 700; letter-spacing: 0.5px;
+        font-size: 0.92rem; font-weight: 700; letter-spacing: 0.5px;
     }
     .status-pill {
         display: inline-flex; align-items: center; gap: 8px;
         background: rgba(57, 230, 166, 0.08);
         border: 1px solid rgba(57, 230, 166, 0.35);
         border-radius: 20px; padding: 6px 14px; margin: 6px 0 16px 0;
-        font-size: 0.8rem; color: #39E6A6; font-weight: 600; letter-spacing: 0.5px;
+        font-size: 0.78rem; color: #39E6A6; font-weight: 600; letter-spacing: 0.5px;
     }
     .status-dot {
         width: 8px; height: 8px; border-radius: 50%; background: #39E6A6;
         box-shadow: 0 0 8px #39E6A6; animation: pulse 1.8s infinite;
     }
-    @keyframes pulse {
-        0% { opacity: 1; } 50% { opacity: 0.35; } 100% { opacity: 1; }
-    }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.35; } 100% { opacity: 1; } }
     .sidebar-section-label {
         color: #6E86A8; font-size: 0.72rem; font-weight: 700;
         letter-spacing: 1.4px; text-transform: uppercase; margin: 18px 0 8px 0;
     }
 
-    .stTabs [data-baseweb="tab-list"] { gap: 4px; }
+    /* --- Tabs, restyled as a clean professional nav bar --- */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 6px; border-bottom: 1px solid rgba(0, 217, 255, 0.15);
+    }
+    .stTabs [data-baseweb="tab"] {
+        font-weight: 600; letter-spacing: 0.3px; color: #6E86A8;
+    }
     .stTabs [aria-selected="true"] {
         color: #00D9FF !important; border-bottom-color: #00D9FF !important;
     }
 
+    /* --- Buttons (Accept/Reject, etc.) themed to match --- */
+    .stButton > button {
+        background-color: transparent;
+        border: 1px solid rgba(0, 217, 255, 0.4);
+        color: #C9D6E8;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.15s ease;
+    }
+    .stButton > button:hover {
+        border-color: #00D9FF;
+        color: #00D9FF;
+        box-shadow: 0 0 10px rgba(0, 217, 255, 0.3);
+    }
+
+    /* --- Multiselect chip styling --- */
+    span[data-baseweb="tag"] {
+        background-color: rgba(0, 217, 255, 0.12) !important;
+        border: 1px solid rgba(0, 217, 255, 0.4) !important;
+    }
+
     .stMarkdown, .stCaption { color: #C9D6E8; }
 
-    /* Architecture diagram nodes */
+    /* Architecture diagram nodes — numbered badges instead of emoji icons */
     .arch-flow {
         display: flex; align-items: center; justify-content: space-between;
         flex-wrap: wrap; gap: 8px; margin: 10px 0 6px 0;
@@ -120,13 +153,21 @@ st.markdown("""
         border-radius: 10px; padding: 14px 12px; text-align: center;
         box-shadow: 0 0 12px rgba(0, 145, 255, 0.12);
     }
-    .arch-node-icon { font-size: 1.4rem; }
+    .arch-node-badge {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 24px; height: 24px; border-radius: 50%;
+        background: rgba(0, 217, 255, 0.12); border: 1px solid rgba(0, 217, 255, 0.5);
+        color: #00D9FF; font-family: 'Orbitron', sans-serif; font-size: 0.7rem; font-weight: 800;
+    }
     .arch-node-title {
         font-family: 'Orbitron', sans-serif; color: #00D9FF;
-        font-size: 0.78rem; font-weight: 700; margin: 6px 0 4px 0;
+        font-size: 0.76rem; font-weight: 700; margin: 8px 0 4px 0;
     }
     .arch-node-sub { color: #6E86A8; font-size: 0.68rem; line-height: 1.3; }
-    .arch-arrow { color: #00D9FF; font-size: 1.3rem; flex: 0 0 auto; opacity: 0.7; }
+    .arch-arrow { color: #00D9FF; font-size: 1.2rem; flex: 0 0 auto; opacity: 0.7; }
+
+    /* Cookie consent banner */
+    .cookie-text { color: #C9D6E8; font-size: 0.85rem; line-height: 1.5; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -146,7 +187,6 @@ STATUS_COLORS = {
     "MODERATE_FLOW": "#FFB300",
     "SMOOTH_TRAFFIC": "#39E6A6",
 }
-# Fallback only — used if zone_dimension doesn't exist yet in Neon
 DEFAULT_ZONE_COORDS = {
     "Central Junction": {"lat": 12.9716, "lon": 77.5946},
     "Tech Park Belt": {"lat": 12.9352, "lon": 77.6245},
@@ -168,11 +208,11 @@ BASE_LAYOUT = dict(
 CHART_MARGIN = dict(t=55, l=10, r=10, b=10)
 
 
-def style_chart(fig, is_3d=False, is_geo=False, **extra_layout):
+def style_chart(fig, is_3d=False, **extra_layout):
     layout = {**BASE_LAYOUT, "margin": CHART_MARGIN}
     layout.update(extra_layout)
     fig.update_layout(**layout)
-    if not is_3d and not is_geo:
+    if not is_3d:
         fig.update_xaxes(gridcolor="rgba(0,217,255,0.08)", zerolinecolor="rgba(0,217,255,0.15)")
         fig.update_yaxes(gridcolor="rgba(0,217,255,0.08)", zerolinecolor="rgba(0,217,255,0.15)")
     return fig
@@ -197,7 +237,31 @@ def render_tab_safely(render_fn):
             st.code(f"{type(tab_error).__name__}: {tab_error}\n\n{traceback.format_exc()}")
 
 
-# 3. Database Connection
+# 3. Cookie consent banner — shown once per session, purely a UI convention for this
+# demo (the app sets no tracking cookies), included because a real production
+# dashboard would have one.
+if "cookie_choice" not in st.session_state:
+    st.session_state.cookie_choice = None
+
+if st.session_state.cookie_choice is None:
+    with st.container(border=True):
+        st.markdown(
+            '<div class="cookie-text">This dashboard uses only session-level state to '
+            'manage filters and preferences while you browse. No personal data is collected '
+            'or shared with third parties.</div>',
+            unsafe_allow_html=True
+        )
+        spacer, col_reject, col_accept = st.columns([6, 1, 1])
+        with col_reject:
+            if st.button("Reject", key="cookie_reject", use_container_width=True):
+                st.session_state.cookie_choice = "rejected"
+                st.rerun()
+        with col_accept:
+            if st.button("Accept", key="cookie_accept", use_container_width=True):
+                st.session_state.cookie_choice = "accepted"
+                st.rerun()
+
+# 4. Database Connection
 DATABASE_URL = st.secrets.get("DATABASE_URL", os.getenv("DATABASE_URL", ""))
 
 @st.cache_data(ttl=15)
@@ -225,18 +289,16 @@ def fetch_zone_coords():
         return DEFAULT_ZONE_COORDS
 
 
-# 4. Sidebar — redesigned Control Panel
+# 5. Sidebar — Control Panel
 with st.sidebar:
     st.markdown("""
         <div class="sidebar-brand">
-            <span class="sidebar-brand-icon">🎛️</span>
+            <div class="sidebar-brand-mark">UT</div>
             <span class="sidebar-brand-text">CONTROL PANEL</span>
         </div>
         <div class="status-pill"><span class="status-dot"></span> PIPELINE ACTIVE</div>
     """, unsafe_allow_html=True)
 
-# Only the initial fetch is a page-level try/except: if this fails, nothing below
-# can render meaningfully, so a full-page message is the right call here.
 try:
     raw_df = fetch_data("SELECT * FROM raw_traffic_fact ORDER BY timestamp DESC, id DESC;")
     raw_df["timestamp"] = pd.to_datetime(raw_df["timestamp"])
@@ -254,50 +316,50 @@ with st.sidebar:
     selected_zones = st.multiselect("Zones", all_zones, default=all_zones, label_visibility="collapsed")
 
     st.markdown('<div class="sidebar-section-label">Data Source</div>', unsafe_allow_html=True)
-    st.info("💡 Auto-refreshed from the Neon PostgreSQL data warehouse every 15 seconds.")
+    st.info("Auto-refreshed from the Neon PostgreSQL data warehouse every 15 seconds.", icon=None)
 
     st.markdown('<div class="sidebar-section-label">Note</div>', unsafe_allow_html=True)
-    st.caption("Telemetry values are simulated with realistic rush-hour patterns — this project demonstrates a real, automated ETL pipeline, not a live sensor feed.")
+    st.caption("Telemetry values are simulated with realistic rush-hour patterns. This project demonstrates a real, automated ETL pipeline, not a live sensor feed.")
 
 df = raw_df[raw_df['zone_name'].isin(selected_zones)].copy() if selected_zones else raw_df.copy()
 
-# 5. Header Section
-st.title("⚡ Urban Transit Telemetry & Analytics Platform")
+# 6. Header Section
+st.title("Urban Transit Telemetry & Analytics Platform")
 st.caption("Real-Time ETL Data Pipeline · Cloud Data Warehouse (Neon PostgreSQL) · Automated GitHub Actions Ingestion")
 
-with st.expander("ℹ️ About this project / Architecture", expanded=False):
+with st.expander("About this project / Architecture", expanded=False):
     st.markdown("""
         <div class="arch-flow">
             <div class="arch-node">
-                <div class="arch-node-icon">⏱️</div>
+                <div class="arch-node-badge">1</div>
                 <div class="arch-node-title">GITHUB ACTIONS</div>
                 <div class="arch-node-sub">Hourly cron trigger<br>runs etl_pipeline.py</div>
             </div>
-            <div class="arch-arrow">➜</div>
+            <div class="arch-arrow">&#8594;</div>
             <div class="arch-node">
-                <div class="arch-node-icon">🔧</div>
-                <div class="arch-node-title">EXTRACT · TRANSFORM</div>
+                <div class="arch-node-badge">2</div>
+                <div class="arch-node-title">EXTRACT / TRANSFORM</div>
                 <div class="arch-node-sub">Generates telemetry,<br>derives congestion status</div>
             </div>
-            <div class="arch-arrow">➜</div>
+            <div class="arch-arrow">&#8594;</div>
             <div class="arch-node">
-                <div class="arch-node-icon">🗄️</div>
+                <div class="arch-node-badge">3</div>
                 <div class="arch-node-title">NEON POSTGRESQL</div>
                 <div class="arch-node-sub">Fact table + zone<br>dimension table</div>
             </div>
-            <div class="arch-arrow">➜</div>
+            <div class="arch-arrow">&#8594;</div>
             <div class="arch-node">
-                <div class="arch-node-icon">📊</div>
+                <div class="arch-node-badge">4</div>
                 <div class="arch-node-title">STREAMLIT APP</div>
                 <div class="arch-node-sub">Live queries,<br>renders this dashboard</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
     st.markdown("""
-    **Stack:** Python · GitHub Actions · Neon (serverless Postgres) · Streamlit · Plotly
+    **Stack:** Python, GitHub Actions, Neon (serverless Postgres), Streamlit, Plotly, Folium
 
     **Data note:** telemetry values are simulated with time-of-day rush-hour patterns
-    (heavier 8-10am / 5-8pm, lighter overnight) rather than a live sensor feed — the
+    (heavier 8-10am / 5-8pm, lighter overnight) rather than a live sensor feed. The
     pipeline automation, storage, and serving layer are all genuinely live and running.
 
     **Source:** [github.com/viniska13/traffic-etl-pipeline](https://github.com/viniska13/traffic-etl-pipeline)
@@ -305,7 +367,7 @@ with st.expander("ℹ️ About this project / Architecture", expanded=False):
 
 st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
-# 6. Executive Metric Cards
+# 7. Executive Metric Cards
 total_records = len(df)
 avg_density = df['vehicle_count'].mean() if not df.empty else 0
 avg_speed = df['avg_speed_kmh'].mean() if not df.empty else 0
@@ -327,9 +389,9 @@ if len(batch_times) >= 2:
 if speed_delta is None:
     delta_html = "Network Speed"
 elif speed_delta >= 0:
-    delta_html = f"▲ {speed_delta:.1f} km/h vs last sync"
+    delta_html = f"UP {speed_delta:.1f} km/h vs last sync"
 else:
-    delta_html = f"▼ {abs(speed_delta):.1f} km/h vs last sync"
+    delta_html = f"DOWN {abs(speed_delta):.1f} km/h vs last sync"
 
 m1, m2, m3, m4 = st.columns(4)
 with m1:
@@ -367,14 +429,14 @@ with m4:
 
 st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
-# 7. Tabbed Navigation View — each tab body is isolated via render_tab_safely
+# 8. Tabbed Navigation View — plain text labels, each isolated via render_tab_safely
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "📊 Zone Overview",
-    "📈 Speed vs Volume Correlation",
-    "⏱️ Trends Over Time",
-    "🧊 3D Density Explorer",
-    "🗺️ Zone Map",
-    "📋 Raw Telemetry Explorer",
+    "Zone Overview",
+    "Speed vs Volume Correlation",
+    "Trends Over Time",
+    "3D Density Explorer",
+    "Zone Map",
+    "Raw Telemetry Explorer",
 ])
 
 
@@ -432,7 +494,7 @@ def render_correlation():
     )
     style_chart(fig_scatter)
     st.plotly_chart(fig_scatter, use_container_width=True)
-    st.caption("Speed should trend downward as vehicle count rises — that inverse relationship is the core signal this pipeline is built to surface. Older rows from before the correlation fix may still show noise until they age out; truncating the table resets this instantly.")
+    st.caption("Speed trends downward as vehicle count rises — that inverse relationship is the core signal this pipeline is built to surface.")
 
 
 def render_trends():
@@ -464,7 +526,7 @@ def render_trends():
 
 def render_3d():
     st.subheader("3D Density Explorer")
-    st.caption("Vehicle count × speed × hour-of-day — rotate and zoom to spot patterns a flat chart can't show.")
+    st.caption("Vehicle count, speed, and hour-of-day — rotate and zoom to spot patterns a flat chart can't show.")
     fig_3d = px.scatter_3d(
         df, x="vehicle_count", y="avg_speed_kmh", z="hour_of_day",
         color="zone_name", size="vehicle_count", opacity=0.85,
@@ -473,7 +535,7 @@ def render_3d():
             "vehicle_count": "Vehicle Count", "avg_speed_kmh": "Speed (km/h)",
             "hour_of_day": "Hour of Day", "zone_name": "Zone",
         },
-        title="<b>Density · Speed · Time-of-Day</b>",
+        title="<b>Density, Speed, Time-of-Day</b>",
         template="plotly_dark"
     )
     fig_3d.update_scenes(
@@ -501,38 +563,45 @@ def render_map():
         st.info("No zone data available for the current filter.")
         return
 
-    fig_map = px.scatter_geo(
-        latest_snapshot,
-        lat="lat", lon="lon",
-        color="congestion_status",
-        size="vehicle_count",
-        size_max=28,
-        hover_name="zone_name",
-        hover_data=["avg_speed_kmh", "vehicle_count"],
-        color_discrete_map=STATUS_COLORS,
-        title="<b>Zone Status (most recent reading per zone)</b>",
-        template="plotly_dark"
+    center_lat = latest_snapshot['lat'].mean()
+    center_lon = latest_snapshot['lon'].mean()
+
+    # Folium/Leaflet with CartoDB's dark tile set — a different rendering stack from
+    # Plotly's map components, using standard, widely-mirrored OpenStreetMap-based tiles.
+    fmap = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=11,
+        tiles="CartoDB dark_matter",
+        control_scale=True,
     )
 
-    # Manual padded bounds instead of fitbounds="locations" — gives a wider, more
-    # "dashboard panel"-sized view instead of zooming in tight around the points.
-    lats = [c["lat"] for c in zone_coords.values()]
-    lons = [c["lon"] for c in zone_coords.values()]
-    pad = 0.18
-    fig_map.update_geos(
-        lataxis_range=[min(lats) - pad, max(lats) + pad],
-        lonaxis_range=[min(lons) - pad, max(lons) + pad],
-        visible=False,
-        showland=True, landcolor="#0B1220",
-        showocean=True, oceancolor="#05070D",
-        showcountries=True, countrycolor="rgba(0,217,255,0.2)",
-        showcoastlines=True, coastlinecolor="rgba(0,217,255,0.3)",
-        showlakes=False,
-        bgcolor="rgba(0,0,0,0)",
-    )
-    style_chart(fig_map, is_geo=True, height=520, margin=dict(l=0, r=0, t=45, b=0))
-    st.plotly_chart(fig_map, use_container_width=True)
-    st.caption("Zone coordinates are sourced from the `zone_dimension` table in Neon. Positions are approximate placements for this demo dataset.")
+    for _, row in latest_snapshot.iterrows():
+        color = STATUS_COLORS.get(row['congestion_status'], "#C9D6E8")
+        radius = 8 + (row['vehicle_count'] / 1200) * 14
+        popup_html = (
+            f"<b>{row['zone_name']}</b><br>"
+            f"Vehicles: {row['vehicle_count']}<br>"
+            f"Speed: {row['avg_speed_kmh']:.1f} km/h<br>"
+            f"Status: {row['congestion_status']}"
+        )
+        folium.CircleMarker(
+            location=[row['lat'], row['lon']],
+            radius=radius,
+            color=color,
+            weight=2,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.75,
+            popup=folium.Popup(popup_html, max_width=220),
+            tooltip=row['zone_name'],
+        ).add_to(fmap)
+
+    bounds = [[latest_snapshot['lat'].min(), latest_snapshot['lon'].min()],
+              [latest_snapshot['lat'].max(), latest_snapshot['lon'].max()]]
+    fmap.fit_bounds(bounds, padding=(40, 40))
+
+    st_folium(fmap, use_container_width=True, height=520, returned_objects=[])
+    st.caption("Zone coordinates are sourced from the zone_dimension table in Neon. Positions are approximate placements for this demo dataset.")
 
 
 def render_raw_table():
