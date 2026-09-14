@@ -173,14 +173,14 @@ st.markdown("""
 
 # Neon black/blue palette — one fixed color per zone, reused across every chart
 ZONE_COLORS = {
-    "Central Junction": "#00D9FF",
-    "Tech Park Belt": "#39E6A6",
-    "Outer Ring Road": "#7C4DFF",
-    "Airport Corridor": "#2979FF",
-    "Silk Board Junction": "#FF6EC7",
-    "Whitefield Corridor": "#00FFC6",
-    "Electronic City Link": "#5B8DEF",
-    "Hebbal Flyover": "#B388FF",
+    "Central Junction": "#00E5FF",       # electric cyan
+    "Tech Park Belt": "#448AFF",         # vivid blue
+    "Outer Ring Road": "#7C4DFF",        # violet
+    "Airport Corridor": "#536DFE",       # indigo
+    "Silk Board Junction": "#FF4FA3",    # neon magenta
+    "Whitefield Corridor": "#18FFFF",    # aqua
+    "Electronic City Link": "#B388FF",   # light purple
+    "Hebbal Flyover": "#64FFDA",         # mint teal
 }
 STATUS_COLORS = {
     "HEAVY_CONGESTION": "#FF3860",
