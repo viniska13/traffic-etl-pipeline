@@ -566,14 +566,24 @@ def render_map():
     center_lat = latest_snapshot['lat'].mean()
     center_lon = latest_snapshot['lon'].mean()
 
-    # Folium/Leaflet with CartoDB's dark tile set — a different rendering stack from
-    # Plotly's map components, using standard, widely-mirrored OpenStreetMap-based tiles.
+    # Plain OpenStreetMap tiles — the original, always-free, no-API-key-ever tile
+    # source (unlike CartoDB's basemap styles, which now require registration and
+    # broke this exact map once already). A CSS filter darkens it to match the theme.
     fmap = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=11,
-        tiles="CartoDB dark_matter",
+        tiles="OpenStreetMap",
         control_scale=True,
     )
+    dark_filter_css = """
+    <style>
+    .leaflet-tile-pane {
+        filter: invert(1) hue-rotate(200deg) brightness(0.85) contrast(0.9) saturate(0.6);
+    }
+    .leaflet-container { background: #05070D !important; }
+    </style>
+    """
+    fmap.get_root().html.add_child(folium.Element(dark_filter_css))
 
     for _, row in latest_snapshot.iterrows():
         color = STATUS_COLORS.get(row['congestion_status'], "#C9D6E8")
