@@ -4,26 +4,42 @@ from datetime import datetime
 import pandas as pd
 import psycopg2
 
-# Zone metadata — this now lives in the warehouse (zone_dimension table) instead of
-# being hardcoded separately in the Streamlit app, so the map is genuinely sourced
-# from Neon like the rest of the dashboard claims.
-ZONES = ["Central Junction", "Tech Park Belt", "Outer Ring Road", "Airport Corridor"]
+# Zone metadata lives in Neon (zone_dimension table), not hardcoded in the app.
 ZONE_COORDS = {
     "Central Junction": {"lat": 12.9716, "lon": 77.5946},
     "Tech Park Belt": {"lat": 12.9352, "lon": 77.6245},
     "Outer Ring Road": {"lat": 12.9698, "lon": 77.7500},
     "Airport Corridor": {"lat": 13.1986, "lon": 77.7066},
+    "Silk Board Junction": {"lat": 12.9172, "lon": 77.6228},
+    "Whitefield Corridor": {"lat": 12.9750, "lon": 77.7480},
+    "Electronic City Link": {"lat": 12.8452, "lon": 77.6602},
+    "Hebbal Flyover": {"lat": 13.0358, "lon": 77.5970},
 }
+ZONES = list(ZONE_COORDS.keys())
 
 
-# 1. EXTRACT: Simulate raw traffic metrics with a realistic density-speed relationship
+def get_hourly_multiplier(hour):
+    """Simulates realistic rush-hour traffic patterns instead of flat randomness:
+    heavier during morning (8-10) and evening (17-20) commute windows, lighter overnight."""
+    if 8 <= hour <= 10 or 17 <= hour <= 20:
+        return random.uniform(1.3, 1.6)   # rush hour
+    elif 0 <= hour <= 5:
+        return random.uniform(0.25, 0.45)  # overnight lull
+    else:
+        return random.uniform(0.8, 1.1)    # regular daytime
+
+
+# 1. EXTRACT: Simulate raw traffic metrics with realistic density-speed-time relationships
 def extract_traffic_data():
+    current_hour = datetime.now().hour
+    multiplier = get_hourly_multiplier(current_hour)
+
     data = []
     for zone in ZONES:
-        vehicle_count = random.randint(150, 1200)
+        base_count = random.randint(150, 700)
+        vehicle_count = int(min(1200, max(60, base_count * multiplier)))
 
-        # Realistic traffic-flow model: speed drops as density rises (inverse relationship),
-        # plus a small amount of random noise so it isn't a perfectly straight line.
+        # Speed drops as density rises (inverse relationship), plus small noise
         density_ratio = vehicle_count / 1200
         base_speed = 65 - (density_ratio * 48)
         noise = random.uniform(-3.5, 3.5)
@@ -62,7 +78,6 @@ def load_to_postgres(df):
     try:
         cursor = conn.cursor()
 
-        # Fact table — one row per telemetry reading
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS raw_traffic_fact (
                 id SERIAL PRIMARY KEY,
@@ -74,8 +89,6 @@ def load_to_postgres(df):
             );
         """)
 
-        # Dimension table — static metadata about each zone (currently just coordinates).
-        # Seeded idempotently: safe to run every hour without duplicating rows.
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS zone_dimension (
                 zone_name VARCHAR(100) PRIMARY KEY,
@@ -90,7 +103,6 @@ def load_to_postgres(df):
                 ON CONFLICT (zone_name) DO NOTHING;
             """, (zone, coords["lat"], coords["lon"]))
 
-        # Ingest fact rows
         for _, row in df.iterrows():
             cursor.execute("""
                 INSERT INTO raw_traffic_fact (timestamp, zone_name, vehicle_count, avg_speed_kmh, congestion_status)
