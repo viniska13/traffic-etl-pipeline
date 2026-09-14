@@ -324,46 +324,13 @@ with st.sidebar:
 df = raw_df[raw_df['zone_name'].isin(selected_zones)].copy() if selected_zones else raw_df.copy()
 
 # 6. Header Section
-st.title("Urban Transit Telemetry & Analytics Platform")
+st.markdown('''
+    <div style="display:flex; align-items:center; gap:14px; margin-bottom:2px;">
+        <div class="sidebar-brand-mark" style="width:42px; height:42px; font-size:1.1rem; border-radius:9px;">UT</div>
+        <h1 style="margin:0;">Urban Transit Telemetry & Analytics Platform</h1>
+    </div>
+''', unsafe_allow_html=True)
 st.caption("Real-Time ETL Data Pipeline · Cloud Data Warehouse (Neon PostgreSQL) · Automated GitHub Actions Ingestion")
-
-with st.expander("About this project / Architecture", expanded=False):
-    st.markdown("""
-        <div class="arch-flow">
-            <div class="arch-node">
-                <div class="arch-node-badge">1</div>
-                <div class="arch-node-title">GITHUB ACTIONS</div>
-                <div class="arch-node-sub">Hourly cron trigger<br>runs etl_pipeline.py</div>
-            </div>
-            <div class="arch-arrow">&#8594;</div>
-            <div class="arch-node">
-                <div class="arch-node-badge">2</div>
-                <div class="arch-node-title">EXTRACT / TRANSFORM</div>
-                <div class="arch-node-sub">Generates telemetry,<br>derives congestion status</div>
-            </div>
-            <div class="arch-arrow">&#8594;</div>
-            <div class="arch-node">
-                <div class="arch-node-badge">3</div>
-                <div class="arch-node-title">NEON POSTGRESQL</div>
-                <div class="arch-node-sub">Fact table + zone<br>dimension table</div>
-            </div>
-            <div class="arch-arrow">&#8594;</div>
-            <div class="arch-node">
-                <div class="arch-node-badge">4</div>
-                <div class="arch-node-title">STREAMLIT APP</div>
-                <div class="arch-node-sub">Live queries,<br>renders this dashboard</div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-    st.markdown("""
-    **Stack:** Python, GitHub Actions, Neon (serverless Postgres), Streamlit, Plotly, Folium
-
-    **Data note:** telemetry values are simulated with time-of-day rush-hour patterns
-    (heavier 8-10am / 5-8pm, lighter overnight) rather than a live sensor feed. The
-    pipeline automation, storage, and serving layer are all genuinely live and running.
-
-    **Source:** [github.com/viniska13/traffic-etl-pipeline](https://github.com/viniska13/traffic-etl-pipeline)
-    """)
 
 st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
