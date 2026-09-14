@@ -49,46 +49,84 @@ st.markdown("""
         box-shadow: 0 0 28px rgba(0, 217, 255, 0.4);
     }
     .metric-title {
-        color: #6E86A8;
-        font-size: 0.78rem;
-        font-weight: 700;
-        letter-spacing: 1.6px;
-        margin-bottom: 10px;
-        text-transform: uppercase;
+        color: #6E86A8; font-size: 0.78rem; font-weight: 700;
+        letter-spacing: 1.6px; margin-bottom: 10px; text-transform: uppercase;
     }
     .metric-value {
-        font-family: 'Orbitron', sans-serif;
-        color: #00D9FF;
-        font-size: 1.9rem;
-        font-weight: 800;
-        text-shadow: 0 0 14px rgba(0, 217, 255, 0.55);
+        font-family: 'Orbitron', sans-serif; color: #00D9FF;
+        font-size: 1.9rem; font-weight: 800; text-shadow: 0 0 14px rgba(0, 217, 255, 0.55);
     }
-    .metric-sub {
-        color: #39E6A6;
-        font-size: 0.78rem;
-        margin-top: 8px;
-        letter-spacing: 0.3px;
-    }
+    .metric-sub { color: #39E6A6; font-size: 0.78rem; margin-top: 8px; letter-spacing: 0.3px; }
 
     .section-divider {
-        height: 1px;
-        background: linear-gradient(90deg, #00D9FF66, transparent 70%);
-        margin: 28px 0 18px 0;
-        box-shadow: 0 0 8px rgba(0, 217, 255, 0.25);
+        height: 1px; background: linear-gradient(90deg, #00D9FF66, transparent 70%);
+        margin: 28px 0 18px 0; box-shadow: 0 0 8px rgba(0, 217, 255, 0.25);
     }
 
+    /* --- Redesigned Control Panel (sidebar) --- */
     section[data-testid="stSidebar"] {
         background-color: #050810;
         border-right: 1px solid rgba(0, 217, 255, 0.2);
+        min-width: 320px !important;
+        width: 320px !important;
+    }
+    .sidebar-brand {
+        display: flex; align-items: center; gap: 10px;
+        padding: 4px 0 14px 0; margin-bottom: 10px;
+        border-bottom: 1px solid rgba(0, 217, 255, 0.15);
+    }
+    .sidebar-brand-icon {
+        font-size: 1.6rem; text-shadow: 0 0 14px rgba(0, 217, 255, 0.6);
+    }
+    .sidebar-brand-text {
+        font-family: 'Orbitron', sans-serif; color: #00D9FF;
+        font-size: 0.95rem; font-weight: 700; letter-spacing: 0.5px;
+    }
+    .status-pill {
+        display: inline-flex; align-items: center; gap: 8px;
+        background: rgba(57, 230, 166, 0.08);
+        border: 1px solid rgba(57, 230, 166, 0.35);
+        border-radius: 20px; padding: 6px 14px; margin: 6px 0 16px 0;
+        font-size: 0.8rem; color: #39E6A6; font-weight: 600; letter-spacing: 0.5px;
+    }
+    .status-dot {
+        width: 8px; height: 8px; border-radius: 50%; background: #39E6A6;
+        box-shadow: 0 0 8px #39E6A6; animation: pulse 1.8s infinite;
+    }
+    @keyframes pulse {
+        0% { opacity: 1; } 50% { opacity: 0.35; } 100% { opacity: 1; }
+    }
+    .sidebar-section-label {
+        color: #6E86A8; font-size: 0.72rem; font-weight: 700;
+        letter-spacing: 1.4px; text-transform: uppercase; margin: 18px 0 8px 0;
     }
 
     .stTabs [data-baseweb="tab-list"] { gap: 4px; }
     .stTabs [aria-selected="true"] {
-        color: #00D9FF !important;
-        border-bottom-color: #00D9FF !important;
+        color: #00D9FF !important; border-bottom-color: #00D9FF !important;
     }
 
     .stMarkdown, .stCaption { color: #C9D6E8; }
+
+    /* Architecture diagram nodes */
+    .arch-flow {
+        display: flex; align-items: center; justify-content: space-between;
+        flex-wrap: wrap; gap: 8px; margin: 10px 0 6px 0;
+    }
+    .arch-node {
+        flex: 1; min-width: 150px;
+        background: linear-gradient(160deg, #0B1220 0%, #060A14 100%);
+        border: 1px solid rgba(0, 217, 255, 0.3);
+        border-radius: 10px; padding: 14px 12px; text-align: center;
+        box-shadow: 0 0 12px rgba(0, 145, 255, 0.12);
+    }
+    .arch-node-icon { font-size: 1.4rem; }
+    .arch-node-title {
+        font-family: 'Orbitron', sans-serif; color: #00D9FF;
+        font-size: 0.78rem; font-weight: 700; margin: 6px 0 4px 0;
+    }
+    .arch-node-sub { color: #6E86A8; font-size: 0.68rem; line-height: 1.3; }
+    .arch-arrow { color: #00D9FF; font-size: 1.3rem; flex: 0 0 auto; opacity: 0.7; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -98,19 +136,26 @@ ZONE_COLORS = {
     "Tech Park Belt": "#39E6A6",
     "Outer Ring Road": "#7C4DFF",
     "Airport Corridor": "#2979FF",
+    "Silk Board Junction": "#FF6EC7",
+    "Whitefield Corridor": "#00FFC6",
+    "Electronic City Link": "#5B8DEF",
+    "Hebbal Flyover": "#B388FF",
 }
 STATUS_COLORS = {
     "HEAVY_CONGESTION": "#FF3860",
     "MODERATE_FLOW": "#FFB300",
     "SMOOTH_TRAFFIC": "#39E6A6",
 }
-# Fallback only — used if the zone_dimension table doesn't exist yet in Neon
-# (e.g. before etl_pipeline.py has run once with the new schema).
+# Fallback only — used if zone_dimension doesn't exist yet in Neon
 DEFAULT_ZONE_COORDS = {
     "Central Junction": {"lat": 12.9716, "lon": 77.5946},
     "Tech Park Belt": {"lat": 12.9352, "lon": 77.6245},
     "Outer Ring Road": {"lat": 12.9698, "lon": 77.7500},
     "Airport Corridor": {"lat": 13.1986, "lon": 77.7066},
+    "Silk Board Junction": {"lat": 12.9172, "lon": 77.6228},
+    "Whitefield Corridor": {"lat": 12.9750, "lon": 77.7480},
+    "Electronic City Link": {"lat": 12.8452, "lon": 77.6602},
+    "Hebbal Flyover": {"lat": 13.0358, "lon": 77.5970},
 }
 
 BASE_LAYOUT = dict(
@@ -124,10 +169,6 @@ CHART_MARGIN = dict(t=55, l=10, r=10, b=10)
 
 
 def style_chart(fig, is_3d=False, is_geo=False, **extra_layout):
-    """Apply the shared neon layout, then any chart-specific overrides.
-    Builds one merged dict so no keyword (e.g. margin) is ever passed twice.
-    2D-cartesian axis styling is skipped for 3D scenes and geo maps, which use
-    update_scenes / update_geos instead."""
     layout = {**BASE_LAYOUT, "margin": CHART_MARGIN}
     layout.update(extra_layout)
     fig.update_layout(**layout)
@@ -138,12 +179,9 @@ def style_chart(fig, is_3d=False, is_geo=False, **extra_layout):
 
 
 def style_dataframe(df, subset_col, color_map):
-    """Color-code a column's text. Supports both old and new pandas Styler APIs
-    (Styler.applymap was removed in newer pandas in favor of Styler.map)."""
     def highlight(val):
         color = color_map.get(val, "#C9D6E8")
         return f"color: {color}; font-weight: 600;"
-
     styler = df.style
     if hasattr(styler, "map"):
         return styler.map(highlight, subset=[subset_col])
@@ -151,8 +189,6 @@ def style_dataframe(df, subset_col, color_map):
 
 
 def render_tab_safely(render_fn):
-    """Run one tab's rendering in isolation. If it fails, only this tab shows an
-    error — the rest of the dashboard keeps working normally."""
     try:
         render_fn()
     except Exception as tab_error:
@@ -178,9 +214,6 @@ def fetch_data(query):
 
 @st.cache_data(ttl=300)
 def fetch_zone_coords():
-    """Zone coordinates now live in Neon (zone_dimension table). Falls back to a
-    hardcoded default only if that table doesn't exist yet, so the map never breaks
-    for someone running an older version of etl_pipeline.py."""
     try:
         coords_df = fetch_data("SELECT zone_name, latitude, longitude FROM zone_dimension;")
         coords = {
@@ -192,10 +225,15 @@ def fetch_zone_coords():
         return DEFAULT_ZONE_COORDS
 
 
-# 4. Sidebar Controls
-st.sidebar.title("🎛️ Control Panel")
-st.sidebar.caption("Data Engineering Pipeline: **ACTIVE 🟢**")
-st.sidebar.markdown("---")
+# 4. Sidebar — redesigned Control Panel
+with st.sidebar:
+    st.markdown("""
+        <div class="sidebar-brand">
+            <span class="sidebar-brand-icon">🎛️</span>
+            <span class="sidebar-brand-text">CONTROL PANEL</span>
+        </div>
+        <div class="status-pill"><span class="status-dot"></span> PIPELINE ACTIVE</div>
+    """, unsafe_allow_html=True)
 
 # Only the initial fetch is a page-level try/except: if this fails, nothing below
 # can render meaningfully, so a full-page message is the right call here.
@@ -210,10 +248,16 @@ except Exception as e:
     st.stop()
 
 all_zones = sorted(raw_df['zone_name'].dropna().unique().tolist())
-selected_zones = st.sidebar.multiselect("Filter Monitored Zones", all_zones, default=all_zones)
 
-st.sidebar.markdown("---")
-st.sidebar.info("💡 Data is auto-refreshed from Neon PostgreSQL Data Warehouse.")
+with st.sidebar:
+    st.markdown('<div class="sidebar-section-label">Filter Monitored Zones</div>', unsafe_allow_html=True)
+    selected_zones = st.multiselect("Zones", all_zones, default=all_zones, label_visibility="collapsed")
+
+    st.markdown('<div class="sidebar-section-label">Data Source</div>', unsafe_allow_html=True)
+    st.info("💡 Auto-refreshed from the Neon PostgreSQL data warehouse every 15 seconds.")
+
+    st.markdown('<div class="sidebar-section-label">Note</div>', unsafe_allow_html=True)
+    st.caption("Telemetry values are simulated with realistic rush-hour patterns — this project demonstrates a real, automated ETL pipeline, not a live sensor feed.")
 
 df = raw_df[raw_df['zone_name'].isin(selected_zones)].copy() if selected_zones else raw_df.copy()
 
@@ -221,15 +265,40 @@ df = raw_df[raw_df['zone_name'].isin(selected_zones)].copy() if selected_zones e
 st.title("⚡ Urban Transit Telemetry & Analytics Platform")
 st.caption("Real-Time ETL Data Pipeline · Cloud Data Warehouse (Neon PostgreSQL) · Automated GitHub Actions Ingestion")
 
-with st.expander("ℹ️ About this project / Architecture"):
+with st.expander("ℹ️ About this project / Architecture", expanded=False):
     st.markdown("""
-    **Pipeline:** GitHub Actions (hourly cron) runs `etl_pipeline.py`, which generates and
-    transforms zone-level traffic telemetry and loads it into a Neon PostgreSQL warehouse —
-    a fact table (`raw_traffic_fact`) for readings, and a dimension table (`zone_dimension`)
-    for static zone metadata like coordinates. This Streamlit app queries that warehouse live
-    and renders the views below.
-
+        <div class="arch-flow">
+            <div class="arch-node">
+                <div class="arch-node-icon">⏱️</div>
+                <div class="arch-node-title">GITHUB ACTIONS</div>
+                <div class="arch-node-sub">Hourly cron trigger<br>runs etl_pipeline.py</div>
+            </div>
+            <div class="arch-arrow">➜</div>
+            <div class="arch-node">
+                <div class="arch-node-icon">🔧</div>
+                <div class="arch-node-title">EXTRACT · TRANSFORM</div>
+                <div class="arch-node-sub">Generates telemetry,<br>derives congestion status</div>
+            </div>
+            <div class="arch-arrow">➜</div>
+            <div class="arch-node">
+                <div class="arch-node-icon">🗄️</div>
+                <div class="arch-node-title">NEON POSTGRESQL</div>
+                <div class="arch-node-sub">Fact table + zone<br>dimension table</div>
+            </div>
+            <div class="arch-arrow">➜</div>
+            <div class="arch-node">
+                <div class="arch-node-icon">📊</div>
+                <div class="arch-node-title">STREAMLIT APP</div>
+                <div class="arch-node-sub">Live queries,<br>renders this dashboard</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    st.markdown("""
     **Stack:** Python · GitHub Actions · Neon (serverless Postgres) · Streamlit · Plotly
+
+    **Data note:** telemetry values are simulated with time-of-day rush-hour patterns
+    (heavier 8-10am / 5-8pm, lighter overnight) rather than a live sensor feed — the
+    pipeline automation, storage, and serving layer are all genuinely live and running.
 
     **Source:** [github.com/viniska13/traffic-etl-pipeline](https://github.com/viniska13/traffic-etl-pipeline)
     """)
@@ -298,8 +367,7 @@ with m4:
 
 st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
-# 7. Tabbed Navigation View — each tab body is isolated via render_tab_safely,
-# so a problem in one tab never takes down the others.
+# 7. Tabbed Navigation View — each tab body is isolated via render_tab_safely
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Zone Overview",
     "📈 Speed vs Volume Correlation",
@@ -325,6 +393,7 @@ def render_zone_overview():
             color="zone_name", color_discrete_map=ZONE_COLORS, template="plotly_dark"
         )
         style_chart(fig_vol, showlegend=False)
+        fig_vol.update_xaxes(tickangle=-30)
         st.plotly_chart(fig_vol, use_container_width=True)
     with col_right:
         fig_speed = px.bar(
@@ -334,6 +403,7 @@ def render_zone_overview():
             color="zone_name", color_discrete_map=ZONE_COLORS, template="plotly_dark"
         )
         style_chart(fig_speed, showlegend=False)
+        fig_speed.update_xaxes(tickangle=-30)
         st.plotly_chart(fig_speed, use_container_width=True)
 
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
@@ -347,6 +417,7 @@ def render_zone_overview():
         template="plotly_dark"
     )
     style_chart(fig_status)
+    fig_status.update_xaxes(tickangle=-30)
     st.plotly_chart(fig_status, use_container_width=True)
 
 
@@ -361,7 +432,7 @@ def render_correlation():
     )
     style_chart(fig_scatter)
     st.plotly_chart(fig_scatter, use_container_width=True)
-    st.caption("Speed should trend downward as vehicle count rises — that inverse relationship is the core signal this pipeline is built to surface.")
+    st.caption("Speed should trend downward as vehicle count rises — that inverse relationship is the core signal this pipeline is built to surface. Older rows from before the correlation fix may still show noise until they age out; truncating the table resets this instantly.")
 
 
 def render_trends():
@@ -430,22 +501,27 @@ def render_map():
         st.info("No zone data available for the current filter.")
         return
 
-    # scatter_geo renders from data bundled in the Plotly.js library itself — no live
-    # tile-server fetch required — so it can't go blank from a network/CDN issue the
-    # way scatter_map's tile-based rendering could.
     fig_map = px.scatter_geo(
         latest_snapshot,
         lat="lat", lon="lon",
         color="congestion_status",
         size="vehicle_count",
+        size_max=28,
         hover_name="zone_name",
         hover_data=["avg_speed_kmh", "vehicle_count"],
         color_discrete_map=STATUS_COLORS,
         title="<b>Zone Status (most recent reading per zone)</b>",
         template="plotly_dark"
     )
+
+    # Manual padded bounds instead of fitbounds="locations" — gives a wider, more
+    # "dashboard panel"-sized view instead of zooming in tight around the points.
+    lats = [c["lat"] for c in zone_coords.values()]
+    lons = [c["lon"] for c in zone_coords.values()]
+    pad = 0.18
     fig_map.update_geos(
-        fitbounds="locations",
+        lataxis_range=[min(lats) - pad, max(lats) + pad],
+        lonaxis_range=[min(lons) - pad, max(lons) + pad],
         visible=False,
         showland=True, landcolor="#0B1220",
         showocean=True, oceancolor="#05070D",
@@ -454,7 +530,7 @@ def render_map():
         showlakes=False,
         bgcolor="rgba(0,0,0,0)",
     )
-    style_chart(fig_map, is_geo=True, height=480, margin=dict(l=0, r=0, t=45, b=0))
+    style_chart(fig_map, is_geo=True, height=520, margin=dict(l=0, r=0, t=45, b=0))
     st.plotly_chart(fig_map, use_container_width=True)
     st.caption("Zone coordinates are sourced from the `zone_dimension` table in Neon. Positions are approximate placements for this demo dataset.")
 
